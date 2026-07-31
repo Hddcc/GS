@@ -261,9 +261,34 @@ def prepare_training():
     return model, optimizer, epoch_start, lr_scheduler, random_state, max_val_v
 
 
+def moe_auxiliary_loss(model, diagnostics):
+    model_ref = model.module if isinstance(model, nn.DataParallel) else model
+    usage = diagnostics['router_usage'].reshape(
+        -1, model_ref.num_experts
+    ).mean(dim=0)
+    entropy = diagnostics['router_entropy'].mean()
+    balance = model_ref.num_experts * (
+        usage - 1 / model_ref.num_experts
+    ).square().sum()
+    auxiliary = (
+        model_ref.balance_loss_weight * balance
+        + model_ref.entropy_loss_weight * entropy
+    )
+    return auxiliary, balance, entropy, usage
+
+
 def train(train_loader, model, optimizer):
     model.train()
     train_loss = utils.Averager()
+    moe_stats = {
+        'reconstruction_loss': utils.Averager(),
+        'auxiliary_loss': utils.Averager(),
+        'router_balance': utils.Averager(),
+        'router_entropy': utils.Averager(),
+        'residual_abs_mean': utils.Averager(),
+    }
+    usage_sum = None
+    moe_batches = 0
 
     data_norm = config['data_norm']
     t = data_norm['inp']
@@ -278,14 +303,41 @@ def train(train_loader, model, optimizer):
             batch[k] = v.cuda()
 
         inp = (batch['inp'] - inp_sub) / inp_div
-        pred = model(inp, batch['coord'], batch['scale'], batch['cell'])
+        model_output = model(inp, batch['coord'], batch['scale'], batch['cell'])
+        diagnostics = None
+        if (
+                isinstance(model_output, (tuple, list))
+                and len(model_output) == 2
+                and isinstance(model_output[1], dict)):
+            pred, diagnostics = model_output
+        else:
+            pred = model_output
 
         gt = (batch['gt'] - gt_sub) / gt_div
         pixel_loss = (pred - gt).abs()
         if 'weight' in batch:
-            loss = (pixel_loss * batch['weight']).mean()
+            reconstruction_loss = (pixel_loss * batch['weight']).mean()
         else:
-            loss = pixel_loss.mean()
+            reconstruction_loss = pixel_loss.mean()
+        loss = reconstruction_loss
+        if diagnostics is not None:
+            auxiliary_loss, balance, entropy, usage = moe_auxiliary_loss(
+                model, diagnostics
+            )
+            loss = loss + auxiliary_loss
+            moe_stats['reconstruction_loss'].add(reconstruction_loss.item())
+            moe_stats['auxiliary_loss'].add(auxiliary_loss.item())
+            moe_stats['router_balance'].add(balance.item())
+            moe_stats['router_entropy'].add(entropy.item())
+            moe_stats['residual_abs_mean'].add(
+                diagnostics['residual_abs_mean'].mean().item()
+            )
+            detached_usage = usage.detach()
+            usage_sum = (
+                detached_usage if usage_sum is None
+                else usage_sum + detached_usage
+            )
+            moe_batches += 1
         train_loss.add(loss.item())
 
         optimizer.zero_grad()
@@ -295,7 +347,13 @@ def train(train_loader, model, optimizer):
         pred = None
         loss = None
 
-    return train_loss.item()
+    result = {'loss': train_loss.item()}
+    if moe_batches > 0:
+        result.update({
+            name: average.item() for name, average in moe_stats.items()
+        })
+        result['router_usage'] = (usage_sum / moe_batches).cpu().tolist()
+    return result
 
 
 def main(config_, save_path, seed):
@@ -350,13 +408,42 @@ def main(config_, save_path, seed):
                     )
                 )
 
-        train_loss = train(train_loader, model, optimizer)
+        train_result = train(train_loader, model, optimizer)
 
         if lr_scheduler is not None:
             lr_scheduler.step()
 
+        train_loss = train_result['loss']
         log_info.append('train: loss={:.4f}'.format(train_loss))
         writer.add_scalars('loss', {'train': train_loss}, epoch)
+        if 'router_usage' in train_result:
+            usage_text = '/'.join(
+                '{:.3f}'.format(value)
+                for value in train_result['router_usage']
+            )
+            log_info.append(
+                'moe: recon={:.4f}, aux={:.5f}, entropy={:.4f}, '
+                'usage=[{}], residual={:.6f}'.format(
+                    train_result['reconstruction_loss'],
+                    train_result['auxiliary_loss'],
+                    train_result['router_entropy'],
+                    usage_text,
+                    train_result['residual_abs_mean'],
+                )
+            )
+            writer.add_scalars('moe_loss', {
+                'reconstruction': train_result['reconstruction_loss'],
+                'auxiliary': train_result['auxiliary_loss'],
+                'balance': train_result['router_balance'],
+                'entropy': train_result['router_entropy'],
+            }, epoch)
+            for index, usage in enumerate(train_result['router_usage']):
+                writer.add_scalar('moe_usage/expert_{}'.format(index), usage, epoch)
+            writer.add_scalar(
+                'moe_residual/abs_mean',
+                train_result['residual_abs_mean'],
+                epoch,
+            )
 
         if n_gpus > 1:
             model_ = model.module

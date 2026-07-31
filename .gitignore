@@ -6,6 +6,7 @@
 /save/
 /results/
 /outputs/
+/outputs_research_*.xml
 /server_backups/
 *.pth
 *.pt
@@ -36,4 +37,3 @@ venv/
 .vscode/
 .DS_Store
 Thumbs.db
-
