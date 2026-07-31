@@ -1,0 +1,39 @@
+# Datasets and generated low/high-resolution data
+/Dataset/
+/data/
+
+# Training checkpoints and run outputs
+/save/
+/results/
+/outputs/
+/server_backups/
+*.pth
+*.pt
+*.ckpt
+*.onnx
+*.log
+
+# Packaged server-transfer artifacts
+*.zip
+*.7z
+*.tar
+*.tar.gz
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local credentials and editor files
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
