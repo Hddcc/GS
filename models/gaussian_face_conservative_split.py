@@ -21,7 +21,7 @@ class ConservativeSplitPredictor(nn.Module):
             hidden_dim=48,
             scale_min=1.5,
             scale_max=8.0,
-            separation_init=0.25):
+            separation_init=0.5):
         super().__init__()
         if not 0 < separation_init < 1:
             raise ValueError('separation_init must be between 0 and 1.')
@@ -53,9 +53,17 @@ class ConservativeSplitPredictor(nn.Module):
         )
         nn.init.zeros_(self.body[-1].weight)
         nn.init.zeros_(self.body[-1].bias)
-        self.body[-1].bias.data[2] = math.log(
-            separation_init / (1 - separation_init)
-        )
+        with torch.no_grad():
+            self.body[-1].bias[2] = math.log(
+                separation_init / (1 - separation_init)
+            )
+            # Nonzero paired feature residuals let earlier predictor layers
+            # receive gradients from the first optimization step.
+            nn.init.normal_(
+                self.body[-1].weight[3:3 + feature_dim],
+                mean=0.0,
+                std=0.02,
+            )
 
     def scale_features(self, patch_scales, dtype):
         normalized = (
@@ -127,10 +135,10 @@ class FaceConservativeSplitGaussianSplatter(GaussianSplatter):
             split_hidden_dim=48,
             scale_min=1.5,
             scale_max=8.0,
-            max_offset=0.8,
-            max_feature_delta=0.25,
-            split_gate_init=0.15,
-            separation_init=0.25):
+            max_offset=2.0,
+            max_feature_delta=0.5,
+            split_gate_init=0.3,
+            separation_init=0.5):
         super().__init__(
             encoder_spec=encoder_spec,
             dec_spec=dec_spec,

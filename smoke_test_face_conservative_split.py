@@ -112,6 +112,12 @@ def main():
             model.split_predictor.parameters(), 'split predictor'
         )
         gate_grad = gradient_norm([model.split_gate_logit], 'split gate')
+        if model.last_split_feature_delta.abs().mean().item() <= 1e-5:
+            raise RuntimeError('Paired feature residual is effectively dormant.')
+        if predictor_grad < 1e-8 or gate_grad < 1e-9:
+            raise RuntimeError(
+                'Conservative split gradient is too weak for a training probe.'
+            )
         print(
             'scale={:g}, pred={}, loss={:.6f}, offset={:.8f}, '
             'blend={:.8f}, feature_delta={:.8f}, '
