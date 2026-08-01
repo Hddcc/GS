@@ -46,15 +46,20 @@ def gradient_norm(parameters, name):
 
 def auxiliary_loss(model, diagnostics):
     usage = diagnostics['router_usage'].reshape(-1, model.num_experts).mean(dim=0)
+    prior_usage = diagnostics['router_prior_usage'].reshape(
+        -1, model.num_experts
+    ).mean(dim=0)
     entropy = diagnostics['router_entropy'].mean()
+    prior_kl = diagnostics['router_prior_kl'].mean()
     balance = model.num_experts * (
         usage - 1 / model.num_experts
     ).square().sum()
     loss = (
         model.balance_loss_weight * balance
         + model.entropy_loss_weight * entropy
+        + model.prior_loss_weight * prior_kl
     )
-    return loss, balance, entropy, usage
+    return loss, balance, entropy, prior_kl, usage, prior_usage
 
 
 def choose_device(requested):
@@ -114,7 +119,9 @@ def main():
         assert_finite('prediction', pred)
         assert_finite('RGB residual', model.last_rgb_residual)
 
-        aux, balance, entropy, usage = auxiliary_loss(model, diagnostics)
+        aux, balance, entropy, prior_kl, usage, prior_usage = auxiliary_loss(
+            model, diagnostics
+        )
         loss = pred.abs().mean() + aux
         loss.backward()
         assert_finite('loss', loss)
@@ -131,19 +138,24 @@ def main():
 
         print(
             'scale={:g}, pred={}, loss={:.6f}, aux={:.6f}, '
-            'balance={:.6f}, entropy={:.6f}'.format(
+            'balance={:.6f}, entropy={:.6f}, prior_kl={:.6f}'.format(
                 scale_value,
                 tuple(pred.shape),
                 loss.item(),
                 aux.item(),
                 balance.item(),
                 entropy.item(),
+                prior_kl.item(),
             )
         )
         print(
-            '  usage={}, residual_abs_mean={:.8f}, '
+            '  usage={}, prior={}, residual_abs_mean={:.8f}, '
             'grads=context:{:.6f}/router:{:.6f}/experts:{}/gate:{:.6f}'.format(
                 ['{:.4f}'.format(value) for value in usage.detach().cpu().tolist()],
+                [
+                    '{:.4f}'.format(value)
+                    for value in prior_usage.detach().cpu().tolist()
+                ],
                 model.last_rgb_residual.abs().mean().item(),
                 context_grad,
                 router_grad,

@@ -38,8 +38,11 @@ class FaceScaleMoEGaussianSplatter(GaussianSplatter):
             scale_max=8.0,
             router_temperature=0.7,
             scale_prior_strength=1.0,
+            router_content_strength=None,
             balance_loss_weight=0.01,
             entropy_loss_weight=0.001,
+            prior_loss_weight=0.0,
+            experts_receive_scale=True,
             max_rgb_residual=0.20,
             residual_gate_init=0.50):
         super().__init__(
@@ -59,7 +62,12 @@ class FaceScaleMoEGaussianSplatter(GaussianSplatter):
             raise ValueError('router_temperature must be positive.')
         if scale_prior_strength < 0:
             raise ValueError('scale_prior_strength must be non-negative.')
-        if balance_loss_weight < 0 or entropy_loss_weight < 0:
+        if router_content_strength is not None and router_content_strength <= 0:
+            raise ValueError('router_content_strength must be positive or null.')
+        if (
+                balance_loss_weight < 0
+                or entropy_loss_weight < 0
+                or prior_loss_weight < 0):
             raise ValueError('Auxiliary loss weights must be non-negative.')
         if max_rgb_residual <= 0:
             raise ValueError('max_rgb_residual must be positive.')
@@ -73,10 +81,16 @@ class FaceScaleMoEGaussianSplatter(GaussianSplatter):
             nn.SiLU(inplace=True),
         )
         scale_feature_dim = 4
-        query_dim = expert_feature_dim + 2 + 2 + 2 + scale_feature_dim
-        self.router = make_mlp(query_dim, expert_hidden_dim, num_experts)
+        local_query_dim = expert_feature_dim + 2 + 2 + 2
+        router_query_dim = local_query_dim + scale_feature_dim
+        expert_query_dim = (
+            router_query_dim if experts_receive_scale else local_query_dim
+        )
+        self.router = make_mlp(
+            router_query_dim, expert_hidden_dim, num_experts
+        )
         self.experts = nn.ModuleList([
-            make_mlp(query_dim, expert_hidden_dim, 3)
+            make_mlp(expert_query_dim, expert_hidden_dim, 3)
             for _ in range(num_experts)
         ])
 
@@ -92,8 +106,11 @@ class FaceScaleMoEGaussianSplatter(GaussianSplatter):
         self.log_scale_range = math.log(scale_max) - self.log_scale_min
         self.router_temperature = router_temperature
         self.scale_prior_strength = scale_prior_strength
+        self.router_content_strength = router_content_strength
         self.balance_loss_weight = balance_loss_weight
         self.entropy_loss_weight = entropy_loss_weight
+        self.prior_loss_weight = prior_loss_weight
+        self.experts_receive_scale = experts_receive_scale
         self.max_rgb_residual = max_rgb_residual
         self.register_buffer(
             'expert_scale_centers', torch.linspace(0, 1, num_experts)
@@ -167,25 +184,36 @@ class FaceScaleMoEGaussianSplatter(GaussianSplatter):
             query_context.dtype,
             query_context.device,
         )
-        query_input = torch.cat((
+        local_query_input = torch.cat((
             query_context,
             coord,
             relative_coord,
             relative_cell,
+        ), dim=-1)
+        router_input = torch.cat((
+            local_query_input,
             scale_feature,
         ), dim=-1)
+        expert_input = (
+            router_input if self.experts_receive_scale else local_query_input
+        )
 
-        local_router_logits = self.router(query_input)
+        local_router_logits = self.router(router_input)
+        if self.router_content_strength is not None:
+            local_router_logits = (
+                self.router_content_strength * torch.tanh(local_router_logits)
+            )
         centers = self.expert_scale_centers.to(dtype=query_context.dtype)
         scale_prior_logits = -self.scale_prior_strength * (
             normalized_scale - centers.view(1, 1, -1)
         ).square() / self.router_temperature
+        prior_weights = torch.softmax(scale_prior_logits, dim=-1)
         router_weights = torch.softmax(
             local_router_logits + scale_prior_logits, dim=-1
         )
 
         expert_predictions = torch.stack([
-            expert(query_input) for expert in self.experts
+            expert(expert_input) for expert in self.experts
         ], dim=-2)
         residual = (
             expert_predictions * router_weights.unsqueeze(-1)
@@ -201,9 +229,18 @@ class FaceScaleMoEGaussianSplatter(GaussianSplatter):
             router_weights
             * router_weights.clamp_min(1e-8).log()
         ).sum(dim=-1).mean()
+        prior_kl = (
+            router_weights
+            * (
+                router_weights.clamp_min(1e-8).log()
+                - prior_weights.clamp_min(1e-8).log()
+            )
+        ).sum(dim=-1).mean()
         self._training_diagnostics = {
             'router_usage': usage.unsqueeze(0),
+            'router_prior_usage': prior_weights.mean(dim=(0, 1)).unsqueeze(0),
             'router_entropy': entropy.unsqueeze(0),
+            'router_prior_kl': prior_kl.unsqueeze(0),
             'residual_abs_mean': residual.abs().mean().unsqueeze(0),
         }
         self.last_router_weights = router_weights.detach()
@@ -218,3 +255,8 @@ class FaceScaleMoEGaussianSplatter(GaussianSplatter):
             self._training_diagnostics = None
             return prediction, diagnostics
         return prediction
+
+
+register('gaussian-splatter-face-scale-moe-v2')(
+    FaceScaleMoEGaussianSplatter
+)

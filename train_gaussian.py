@@ -266,15 +266,20 @@ def moe_auxiliary_loss(model, diagnostics):
     usage = diagnostics['router_usage'].reshape(
         -1, model_ref.num_experts
     ).mean(dim=0)
+    prior_usage = diagnostics['router_prior_usage'].reshape(
+        -1, model_ref.num_experts
+    ).mean(dim=0)
     entropy = diagnostics['router_entropy'].mean()
+    prior_kl = diagnostics['router_prior_kl'].mean()
     balance = model_ref.num_experts * (
         usage - 1 / model_ref.num_experts
     ).square().sum()
     auxiliary = (
         model_ref.balance_loss_weight * balance
         + model_ref.entropy_loss_weight * entropy
+        + model_ref.prior_loss_weight * prior_kl
     )
-    return auxiliary, balance, entropy, usage
+    return auxiliary, balance, entropy, prior_kl, usage, prior_usage
 
 
 def train(train_loader, model, optimizer):
@@ -285,9 +290,11 @@ def train(train_loader, model, optimizer):
         'auxiliary_loss': utils.Averager(),
         'router_balance': utils.Averager(),
         'router_entropy': utils.Averager(),
+        'router_prior_kl': utils.Averager(),
         'residual_abs_mean': utils.Averager(),
     }
     usage_sum = None
+    prior_usage_sum = None
     moe_batches = 0
 
     data_norm = config['data_norm']
@@ -321,14 +328,20 @@ def train(train_loader, model, optimizer):
             reconstruction_loss = pixel_loss.mean()
         loss = reconstruction_loss
         if diagnostics is not None:
-            auxiliary_loss, balance, entropy, usage = moe_auxiliary_loss(
-                model, diagnostics
-            )
+            (
+                auxiliary_loss,
+                balance,
+                entropy,
+                prior_kl,
+                usage,
+                prior_usage,
+            ) = moe_auxiliary_loss(model, diagnostics)
             loss = loss + auxiliary_loss
             moe_stats['reconstruction_loss'].add(reconstruction_loss.item())
             moe_stats['auxiliary_loss'].add(auxiliary_loss.item())
             moe_stats['router_balance'].add(balance.item())
             moe_stats['router_entropy'].add(entropy.item())
+            moe_stats['router_prior_kl'].add(prior_kl.item())
             moe_stats['residual_abs_mean'].add(
                 diagnostics['residual_abs_mean'].mean().item()
             )
@@ -336,6 +349,11 @@ def train(train_loader, model, optimizer):
             usage_sum = (
                 detached_usage if usage_sum is None
                 else usage_sum + detached_usage
+            )
+            detached_prior_usage = prior_usage.detach()
+            prior_usage_sum = (
+                detached_prior_usage if prior_usage_sum is None
+                else prior_usage_sum + detached_prior_usage
             )
             moe_batches += 1
         train_loss.add(loss.item())
@@ -353,6 +371,9 @@ def train(train_loader, model, optimizer):
             name: average.item() for name, average in moe_stats.items()
         })
         result['router_usage'] = (usage_sum / moe_batches).cpu().tolist()
+        result['router_prior_usage'] = (
+            prior_usage_sum / moe_batches
+        ).cpu().tolist()
     return result
 
 
@@ -421,13 +442,20 @@ def main(config_, save_path, seed):
                 '{:.3f}'.format(value)
                 for value in train_result['router_usage']
             )
+            prior_usage_text = '/'.join(
+                '{:.3f}'.format(value)
+                for value in train_result['router_prior_usage']
+            )
             log_info.append(
                 'moe: recon={:.4f}, aux={:.5f}, entropy={:.4f}, '
-                'usage=[{}], residual={:.6f}'.format(
+                'prior_kl={:.5f}, usage=[{}], prior=[{}], '
+                'residual={:.6f}'.format(
                     train_result['reconstruction_loss'],
                     train_result['auxiliary_loss'],
                     train_result['router_entropy'],
+                    train_result['router_prior_kl'],
                     usage_text,
+                    prior_usage_text,
                     train_result['residual_abs_mean'],
                 )
             )
@@ -436,6 +464,7 @@ def main(config_, save_path, seed):
                 'auxiliary': train_result['auxiliary_loss'],
                 'balance': train_result['router_balance'],
                 'entropy': train_result['router_entropy'],
+                'prior_kl': train_result['router_prior_kl'],
             }, epoch)
             for index, usage in enumerate(train_result['router_usage']):
                 writer.add_scalar('moe_usage/expert_{}'.format(index), usage, epoch)
