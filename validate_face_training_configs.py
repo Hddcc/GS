@@ -95,6 +95,11 @@ def main():
     parser.add_argument('--baseline', required=True)
     parser.add_argument('--model-b', required=True)
     parser.add_argument(
+        '--expected-baseline-model',
+        default='gaussian-splatter',
+        help='Expected registry name for the reference model.',
+    )
+    parser.add_argument(
         '--expected-model-b',
         default='gaussian-splatter-local-frequency-scale-v2',
         help='Expected registry name for the candidate model.',
@@ -108,7 +113,7 @@ def main():
 
     baseline = read_yaml(args.baseline)
     model_b = read_yaml(args.model_b)
-    validate_model(baseline, 'gaussian-splatter')
+    validate_model(baseline, args.expected_baseline_model)
     validate_model(model_b, args.expected_model_b)
     if args.expected_encoder_b is not None:
         actual_encoder = model_b['model']['args']['encoder_spec']['name']
