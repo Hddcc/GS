@@ -40,7 +40,9 @@ def nested(config, path):
     return value
 
 
-def compare_protocol(left, right, left_name, right_name):
+def compare_protocol(
+        left, right, left_name, right_name,
+        allow_encoder_difference=False):
     errors = []
     for path in PROTOCOL_PATHS:
         left_value = nested(left, path)
@@ -59,6 +61,8 @@ def compare_protocol(left, right, left_name, right_name):
         )
 
     for path in SHARED_MODEL_PATHS:
+        if allow_encoder_difference and path == ('model', 'args', 'encoder_spec'):
+            continue
         left_value = nested(left, path)
         right_value = nested(right, path)
         if left_value != right_value:
@@ -95,19 +99,48 @@ def main():
         default='gaussian-splatter-local-frequency-scale-v2',
         help='Expected registry name for the candidate model.',
     )
+    parser.add_argument(
+        '--expected-encoder-b',
+        default=None,
+        help='Allow and verify an intentional candidate encoder change.',
+    )
     args = parser.parse_args()
 
     baseline = read_yaml(args.baseline)
     model_b = read_yaml(args.model_b)
     validate_model(baseline, 'gaussian-splatter')
     validate_model(model_b, args.expected_model_b)
-    compare_protocol(baseline, model_b, args.baseline, args.model_b)
+    if args.expected_encoder_b is not None:
+        actual_encoder = model_b['model']['args']['encoder_spec']['name']
+        if actual_encoder != args.expected_encoder_b:
+            raise ValueError(
+                'Expected candidate encoder {!r}, found {!r}.'.format(
+                    args.expected_encoder_b, actual_encoder
+                )
+            )
+        baseline_encoder_args = baseline['model']['args']['encoder_spec']['args']
+        candidate_encoder_args = model_b['model']['args']['encoder_spec']['args']
+        if (
+                candidate_encoder_args.get('no_upsampling')
+                != baseline_encoder_args.get('no_upsampling')):
+            raise ValueError(
+                'Candidate encoder changed the no_upsampling protocol.'
+            )
+    compare_protocol(
+        baseline,
+        model_b,
+        args.baseline,
+        args.model_b,
+        allow_encoder_difference=(args.expected_encoder_b is not None),
+    )
     print('CONFIG VALIDATION PASSED')
     print('seed:', baseline['seed'])
     print('epoch_max:', baseline['epoch_max'])
     print('train batch_size:', baseline['train_dataset']['batch_size'])
     print('baseline:', baseline['model']['name'])
     print('model B:', model_b['model']['name'])
+    if args.expected_encoder_b is not None:
+        print('model B encoder:', args.expected_encoder_b)
 
 
 if __name__ == '__main__':
