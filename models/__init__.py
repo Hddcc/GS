@@ -3,6 +3,7 @@ from . import edsr
 from . import edsr_geometry_appearance
 from . import edsr_geometry_guided_appearance
 from . import edsr_render_aligned
+from . import edsr_multiband_detail
 from . import gaussian
 from . import gaussian_local_freq_scale
 from . import gaussian_local_freq_scale_v2
@@ -13,4 +14,5 @@ from . import gaussian_face_conservative_split
 from . import gaussian_face_geometry_appearance
 from . import gaussian_face_geometry_guided_appearance
 from . import gaussian_face_render_aligned
+from . import gaussian_face_multiband_detail
 from . import mlp
