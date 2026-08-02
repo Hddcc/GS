@@ -15,4 +15,5 @@ from . import gaussian_face_geometry_appearance
 from . import gaussian_face_geometry_guided_appearance
 from . import gaussian_face_render_aligned
 from . import gaussian_face_multiband_detail
+from . import gaussian_face_moment_residual
 from . import mlp
