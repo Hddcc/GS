@@ -18,4 +18,5 @@ from . import gaussian_face_render_aligned
 from . import gaussian_face_multiband_detail
 from . import gaussian_face_moment_residual
 from . import gaussian_face_scale_depth_router
+from . import gaussian_face_metric_ensemble
 from . import mlp
