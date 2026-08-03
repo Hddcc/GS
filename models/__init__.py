@@ -5,6 +5,7 @@ from . import edsr_geometry_guided_appearance
 from . import edsr_render_aligned
 from . import edsr_multiband_detail
 from . import edsr_scale_depth_router
+from . import edsr_sparse_gaussian_allocation
 from . import gaussian
 from . import gaussian_local_freq_scale
 from . import gaussian_local_freq_scale_v2
@@ -19,4 +20,5 @@ from . import gaussian_face_multiband_detail
 from . import gaussian_face_moment_residual
 from . import gaussian_face_scale_depth_router
 from . import gaussian_face_metric_ensemble
+from . import gaussian_face_sparse_allocation
 from . import mlp
