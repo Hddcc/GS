@@ -227,10 +227,14 @@ class MemoryEfficientGaussianSplatter(GaussianSplatter):
         rendered = F.interpolate(
             rendered, size=(hr_h, hr_w), mode='bicubic', align_corners=False
         )
-        bypass = F.interpolate(
-            bypass, size=(hr_h, hr_w), mode='bicubic', align_corners=False
-        )
-        full_feature = torch.cat((rendered, bypass), dim=1)
+        if bypass.shape[1] == 0:
+            full_feature = rendered
+        else:
+            bypass = F.interpolate(
+                bypass, size=(hr_h, hr_w), mode='bicubic',
+                align_corners=False,
+            )
+            full_feature = torch.cat((rendered, bypass), dim=1)
 
         coef = self.coef(full_feature)
         freq = self.freq(full_feature)

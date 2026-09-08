@@ -282,7 +282,20 @@ def moe_auxiliary_loss(model, diagnostics):
     return auxiliary, balance, entropy, prior_kl, usage, prior_usage
 
 
-def train(train_loader, model, optimizer):
+def microbatch_ranges(batch_size, microbatch_size=None):
+    if microbatch_size is None:
+        return ((0, batch_size),)
+    if microbatch_size <= 0:
+        raise ValueError('microbatch_size must be positive.')
+    if batch_size % microbatch_size != 0:
+        raise ValueError('batch size must be divisible by microbatch_size.')
+    return tuple(
+        (start, start + microbatch_size)
+        for start in range(0, batch_size, microbatch_size)
+    )
+
+
+def train(train_loader, model, optimizer, microbatch_size=None):
     model.train()
     train_loss = utils.Averager()
     moe_stats = {
@@ -309,57 +322,95 @@ def train(train_loader, model, optimizer):
         for k, v in batch.items():
             batch[k] = v.cuda()
 
-        inp = (batch['inp'] - inp_sub) / inp_div
-        model_output = model(inp, batch['coord'], batch['scale'], batch['cell'])
-        diagnostics = None
-        if (
-                isinstance(model_output, (tuple, list))
-                and len(model_output) == 2
-                and isinstance(model_output[1], dict)):
-            pred, diagnostics = model_output
-        else:
-            pred = model_output
-
-        gt = (batch['gt'] - gt_sub) / gt_div
-        pixel_loss = (pred - gt).abs()
-        if 'weight' in batch:
-            reconstruction_loss = (pixel_loss * batch['weight']).mean()
-        else:
-            reconstruction_loss = pixel_loss.mean()
-        loss = reconstruction_loss
-        if diagnostics is not None:
-            (
-                auxiliary_loss,
-                balance,
-                entropy,
-                prior_kl,
-                usage,
-                prior_usage,
-            ) = moe_auxiliary_loss(model, diagnostics)
-            loss = loss + auxiliary_loss
-            moe_stats['reconstruction_loss'].add(reconstruction_loss.item())
-            moe_stats['auxiliary_loss'].add(auxiliary_loss.item())
-            moe_stats['router_balance'].add(balance.item())
-            moe_stats['router_entropy'].add(entropy.item())
-            moe_stats['router_prior_kl'].add(prior_kl.item())
-            moe_stats['residual_abs_mean'].add(
-                diagnostics['residual_abs_mean'].mean().item()
-            )
-            detached_usage = usage.detach()
-            usage_sum = (
-                detached_usage if usage_sum is None
-                else usage_sum + detached_usage
-            )
-            detached_prior_usage = prior_usage.detach()
-            prior_usage_sum = (
-                detached_prior_usage if prior_usage_sum is None
-                else prior_usage_sum + detached_prior_usage
-            )
-            moe_batches += 1
-        train_loss.add(loss.item())
-
         optimizer.zero_grad()
-        loss.backward()
+        full_batch_size = batch['inp'].shape[0]
+        accumulated_loss = 0.0
+        for start, end in microbatch_ranges(
+                full_batch_size, microbatch_size):
+            microbatch = {
+                key: value[start:end]
+                for key, value in batch.items()
+            }
+            microbatch_weight = (end - start) / full_batch_size
+            if (
+                    microbatch_size is not None
+                    and not torch.all(
+                        microbatch['scale'] == microbatch['scale'][0]
+                    )):
+                raise RuntimeError(
+                    'microbatch accumulation received mixed scales.'
+                )
+
+            inp = (microbatch['inp'] - inp_sub) / inp_div
+            model_output = model(
+                inp, microbatch['coord'], microbatch['scale'],
+                microbatch['cell'],
+            )
+            diagnostics = None
+            if (
+                    isinstance(model_output, (tuple, list))
+                    and len(model_output) == 2
+                    and isinstance(model_output[1], dict)):
+                pred, diagnostics = model_output
+            else:
+                pred = model_output
+
+            gt = (microbatch['gt'] - gt_sub) / gt_div
+            pixel_loss = (pred - gt).abs()
+            if 'weight' in microbatch:
+                reconstruction_loss = (
+                    pixel_loss * microbatch['weight']
+                ).mean()
+            else:
+                reconstruction_loss = pixel_loss.mean()
+            loss = reconstruction_loss
+            if diagnostics is not None:
+                (
+                    auxiliary_loss,
+                    balance,
+                    entropy,
+                    prior_kl,
+                    usage,
+                    prior_usage,
+                ) = moe_auxiliary_loss(model, diagnostics)
+                loss = loss + auxiliary_loss
+                moe_stats['reconstruction_loss'].add(
+                    reconstruction_loss.item(), microbatch_weight
+                )
+                moe_stats['auxiliary_loss'].add(
+                    auxiliary_loss.item(), microbatch_weight
+                )
+                moe_stats['router_balance'].add(
+                    balance.item(), microbatch_weight
+                )
+                moe_stats['router_entropy'].add(
+                    entropy.item(), microbatch_weight
+                )
+                moe_stats['router_prior_kl'].add(
+                    prior_kl.item(), microbatch_weight
+                )
+                moe_stats['residual_abs_mean'].add(
+                    diagnostics['residual_abs_mean'].mean().item(),
+                    microbatch_weight,
+                )
+                detached_usage = usage.detach() * microbatch_weight
+                usage_sum = (
+                    detached_usage if usage_sum is None
+                    else usage_sum + detached_usage
+                )
+                detached_prior_usage = (
+                    prior_usage.detach() * microbatch_weight
+                )
+                prior_usage_sum = (
+                    detached_prior_usage if prior_usage_sum is None
+                    else prior_usage_sum + detached_prior_usage
+                )
+                moe_batches += microbatch_weight
+
+            accumulated_loss += loss.item() * microbatch_weight
+            (loss * microbatch_weight).backward()
+
+        train_loss.add(accumulated_loss)
         optimizer.step()
 
         pred = None
@@ -377,7 +428,7 @@ def train(train_loader, model, optimizer):
     return result
 
 
-def main(config_, save_path, seed):
+def main(config_, save_path, seed, microbatch_size=None):
     global config, log, writer, training_seed
     config = copy.deepcopy(config_)
     training_seed = seed
@@ -407,6 +458,29 @@ def main(config_, save_path, seed):
         log('scale-grouped batching: enabled')
 
     n_gpus = len(os.environ['CUDA_VISIBLE_DEVICES'].split(','))
+    if microbatch_size is not None:
+        train_spec = config['train_dataset']
+        wrapper_args = train_spec['wrapper']['args']
+        batch_size = train_spec['batch_size']
+        if n_gpus != 1:
+            raise ValueError(
+                'microbatch accumulation requires exactly one visible GPU.'
+            )
+        if not train_spec.get('scale_grouped_batching', False):
+            raise ValueError(
+                'microbatch accumulation requires scale-grouped batching.'
+            )
+        if microbatch_size != wrapper_args['batch_per_gpu']:
+            raise ValueError(
+                'microbatch_size must match the configured batch_per_gpu.'
+            )
+        ranges = microbatch_ranges(batch_size, microbatch_size)
+        log(
+            'single-GPU gradient accumulation: microbatch_size={}, '
+            'steps={}, effective_batch_size={}'.format(
+                microbatch_size, len(ranges), batch_size
+            )
+        )
     if n_gpus > 1:
         model = nn.parallel.DataParallel(model)
 
@@ -429,7 +503,10 @@ def main(config_, save_path, seed):
                     )
                 )
 
-        train_result = train(train_loader, model, optimizer)
+        train_result = train(
+            train_loader, model, optimizer,
+            microbatch_size=microbatch_size,
+        )
 
         if lr_scheduler is not None:
             lr_scheduler.step()
@@ -536,6 +613,7 @@ if __name__ == '__main__':
     parser.add_argument('--tag', default=None)
     parser.add_argument('--gpu', default='0,1,2,3')
     parser.add_argument('--seed', type=int, default=None)
+    parser.add_argument('--microbatch-size', type=int, default=None)
     args = parser.parse_args()
 
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
@@ -557,4 +635,7 @@ if __name__ == '__main__':
         save_name += '_' + args.tag
     save_path = os.path.join('./save', save_name)
 
-    main(config, save_path, seed)
+    main(
+        config, save_path, seed,
+        microbatch_size=args.microbatch_size,
+    )
