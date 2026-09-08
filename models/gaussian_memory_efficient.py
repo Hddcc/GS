@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 
 from models import register
 from models.gaussian import (
@@ -133,19 +134,31 @@ class MemoryEfficientGaussianSplatter(GaussianSplatter):
                 ],
                 align_corners=True,
             ).contiguous()
-            translated = F.grid_sample(
-                kernel[first:stop].repeat(
-                    patch_batch, 1, 1, 1
-                ).contiguous(),
-                grid,
-                align_corners=True,
-            ).view(
-                patch_batch, chunk_count, channels, patch_h, patch_w
-            )
-            output = output + (
-                colors[:, first:stop].unsqueeze(-1).unsqueeze(-1)
-                * translated
-            ).sum(dim=1)
+            chunk_kernel = kernel[first:stop]
+            chunk_colors = colors[:, first:stop]
+
+            def render_chunk(kernel_input, color_input, grid_input):
+                translated = F.grid_sample(
+                    kernel_input.repeat(
+                        patch_batch, 1, 1, 1
+                    ).contiguous(),
+                    grid_input,
+                    align_corners=True,
+                ).view(
+                    patch_batch, chunk_count, channels, patch_h, patch_w
+                )
+                return (
+                    color_input.unsqueeze(-1).unsqueeze(-1) * translated
+                ).sum(dim=1)
+
+            if self.training and torch.is_grad_enabled():
+                contribution = checkpoint(
+                    render_chunk, chunk_kernel, chunk_colors, grid,
+                    use_reentrant=False,
+                )
+            else:
+                contribution = render_chunk(chunk_kernel, chunk_colors, grid)
+            output = output + contribution
             self.last_peak_layer_elements = max(
                 self.last_peak_layer_elements,
                 patch_batch * chunk_count * channels * patch_h * patch_w,

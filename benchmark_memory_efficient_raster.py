@@ -38,7 +38,7 @@ def make_query(height, width, count, device):
 
 
 def build(spec, device):
-    return models.make(copy.deepcopy(spec), load_sd=True).to(device).eval()
+    return models.make(copy.deepcopy(spec), load_sd=True).to(device).train()
 
 
 def measure(spec, inp, coord, scale, cell, warmup, repeats):
@@ -48,16 +48,23 @@ def measure(spec, inp, coord, scale, cell, warmup, repeats):
     torch.cuda.reset_peak_memory_stats(device)
     timings = []
     output = None
+    peak = 0
     with torch.no_grad():
-        for index in range(warmup + repeats):
-            torch.cuda.synchronize(device)
-            started = time.perf_counter()
-            output = model(inp, coord, scale, cell)
-            torch.cuda.synchronize(device)
-            elapsed = time.perf_counter() - started
-            if index >= warmup:
-                timings.append(elapsed)
-    peak = torch.cuda.max_memory_allocated(device)
+        for _ in range(warmup):
+            seed_all(9107)
+            model(inp, coord, scale, cell)
+    for _ in range(repeats):
+        model.zero_grad(set_to_none=True)
+        seed_all(9107)
+        torch.cuda.reset_peak_memory_stats(device)
+        torch.cuda.synchronize(device)
+        started = time.perf_counter()
+        output = model(inp, coord, scale, cell)
+        output.square().mean().backward()
+        torch.cuda.synchronize(device)
+        elapsed = time.perf_counter() - started
+        timings.append(elapsed)
+        peak = max(peak, torch.cuda.max_memory_allocated(device))
     layer_elements = getattr(model, 'last_peak_layer_elements', None)
     baseline_elements = getattr(model, 'last_baseline_layer_elements', None)
     output = output.detach().cpu()
@@ -144,8 +151,8 @@ def main():
         efficient[1] / 2 ** 20
     ))
     print('peak memory reduction: {:.2%}'.format(memory_reduction))
-    print('baseline median forward: {:.4f} s'.format(baseline[2]))
-    print('candidate median forward: {:.4f} s'.format(efficient[2]))
+    print('baseline median train step: {:.4f} s'.format(baseline[2]))
+    print('candidate median train step: {:.4f} s'.format(efficient[2]))
     print('candidate/baseline time ratio: {:.3f}'.format(speed_ratio))
     print('largest layer elements: baseline={} chunk7={}'.format(
         efficient[4], efficient[3]
