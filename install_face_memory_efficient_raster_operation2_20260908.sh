@@ -4,7 +4,7 @@ set -euo pipefail
 project=/root/userfolder_new/20260527GaussiSR/GaussianSR-main
 bundle_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 payload="$bundle_dir/payload"
-source_commit=da41c9e2e58f048d5262ea2f99a431230076147d
+source_commit=da41c9e17e26d7a015de2df5af0efcfd38b4a0df
 physical_gpu="${PHYSICAL_GPU:-4}"
 stamp="$project/results/face_memory_efficient_raster_cuda_admission_20260908.txt"
 benchmark_log="$project/results/face_memory_efficient_raster_cuda_screen_20260908.log"

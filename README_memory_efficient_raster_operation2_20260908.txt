@@ -30,4 +30,4 @@ until the measured output error, memory reduction, and time ratio are reviewed.
 
 Implementation commit
 ---------------------
-da41c9e2e58f048d5262ea2f99a431230076147d
+da41c9e17e26d7a015de2df5af0efcfd38b4a0df
