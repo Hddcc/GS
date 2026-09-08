@@ -15,8 +15,8 @@ Server command
 --------------
 Run from the GaussianSR project root with the GS conda environment active:
 
-  unzip GaussianSR_memory_efficient_raster_operation2_bundle_20260908.zip
-  PHYSICAL_GPU=4 bash memory_efficient_raster_operation2_20260908/install_face_memory_efficient_raster_operation2_20260908.sh
+  unzip GaussianSR_memory_efficient_raster_operation2_bundle_v3_20260908.zip
+  PHYSICAL_GPU=4 bash memory_efficient_raster_operation2_v3_20260908/install_face_memory_efficient_raster_operation2_20260908.sh
 
 PHYSICAL_GPU may be 0, 2, or 4. Only one GPU is used. No training is launched.
 The installer is resumable when already-copied payload files match exactly.
