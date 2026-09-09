@@ -3,6 +3,7 @@ from . import edsr
 from . import edsr_geometry_appearance
 from . import gaussian
 from . import gaussian_memory_efficient
+from . import gaussian_multi_primitive
 from . import gaussian_local_freq_scale
 from . import gaussian_local_freq_scale_v2
 from . import gaussian_face_frequency_residual
