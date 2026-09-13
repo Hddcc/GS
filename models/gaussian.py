@@ -407,7 +407,10 @@ class GaussianSplatter(nn.Module):
 
     def forward(self, inp, coord, scale, cell=None):
         self.gen_feat(inp)
-        return self.query_rgb(coord, scale, cell)
+        prediction = self.query_rgb(coord, scale, cell)
+        if self.training and hasattr(self.encoder, 'training_diagnostics'):
+            return prediction, self.encoder.training_diagnostics()
+        return prediction
 
 
 if __name__ == '__main__':

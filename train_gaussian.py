@@ -282,6 +282,13 @@ def moe_auxiliary_loss(model, diagnostics):
     return auxiliary, balance, entropy, prior_kl, usage, prior_usage
 
 
+def iafm_auxiliary_loss(model, diagnostics):
+    model_ref = model.module if isinstance(model, nn.DataParallel) else model
+    entropy = diagnostics['information_entropy_loss'].mean()
+    auxiliary = model_ref.encoder.entropy_loss_weight * entropy
+    return auxiliary, entropy
+
+
 def microbatch_ranges(batch_size, microbatch_size=None):
     if microbatch_size is None:
         return ((0, batch_size),)
@@ -305,6 +312,14 @@ def train(train_loader, model, optimizer, microbatch_size=None):
         'router_entropy': utils.Averager(),
         'router_prior_kl': utils.Averager(),
         'residual_abs_mean': utils.Averager(),
+    }
+    iafm_stats = {
+        'iafm_auxiliary_loss': utils.Averager(),
+        'information_entropy_loss': utils.Averager(),
+        'idm_mean': utils.Averager(),
+        'idm_spatial_std': utils.Averager(),
+        'arm_response': utils.Averager(),
+        'scaled_arm_response': utils.Averager(),
     }
     usage_sum = None
     prior_usage_sum = None
@@ -364,7 +379,7 @@ def train(train_loader, model, optimizer, microbatch_size=None):
             else:
                 reconstruction_loss = pixel_loss.mean()
             loss = reconstruction_loss
-            if diagnostics is not None:
+            if diagnostics is not None and 'router_usage' in diagnostics:
                 (
                     auxiliary_loss,
                     balance,
@@ -406,6 +421,24 @@ def train(train_loader, model, optimizer, microbatch_size=None):
                     else prior_usage_sum + detached_prior_usage
                 )
                 moe_batches += microbatch_weight
+            elif diagnostics is not None and (
+                    'information_entropy_loss' in diagnostics):
+                auxiliary_loss, entropy = iafm_auxiliary_loss(
+                    model, diagnostics
+                )
+                loss = loss + auxiliary_loss
+                iafm_stats['iafm_auxiliary_loss'].add(
+                    auxiliary_loss.item(), microbatch_weight
+                )
+                iafm_stats['information_entropy_loss'].add(
+                    entropy.item(), microbatch_weight
+                )
+                for name in (
+                        'idm_mean', 'idm_spatial_std',
+                        'arm_response', 'scaled_arm_response'):
+                    iafm_stats[name].add(
+                        diagnostics[name].mean().item(), microbatch_weight
+                    )
 
             accumulated_loss += loss.item() * microbatch_weight
             (loss * microbatch_weight).backward()
@@ -425,6 +458,10 @@ def train(train_loader, model, optimizer, microbatch_size=None):
         result['router_prior_usage'] = (
             prior_usage_sum / moe_batches
         ).cpu().tolist()
+    if iafm_stats['information_entropy_loss'].n > 0:
+        result.update({
+            name: average.item() for name, average in iafm_stats.items()
+        })
     return result
 
 
@@ -550,6 +587,28 @@ def main(config_, save_path, seed, microbatch_size=None):
                 train_result['residual_abs_mean'],
                 epoch,
             )
+        if 'information_entropy_loss' in train_result:
+            log_info.append(
+                'iafm: entropy={:.4f}, aux={:.6f}, idm={:.5f}, '
+                'spatial_std={:.5f}, arm={:.6f}, scaled={:.6f}'.format(
+                    train_result['information_entropy_loss'],
+                    train_result['iafm_auxiliary_loss'],
+                    train_result['idm_mean'],
+                    train_result['idm_spatial_std'],
+                    train_result['arm_response'],
+                    train_result['scaled_arm_response'],
+                )
+            )
+            writer.add_scalars('iafm_loss', {
+                'entropy': train_result['information_entropy_loss'],
+                'auxiliary': train_result['iafm_auxiliary_loss'],
+            }, epoch)
+            writer.add_scalars('iafm_mechanism', {
+                'idm_mean': train_result['idm_mean'],
+                'idm_spatial_std': train_result['idm_spatial_std'],
+                'arm_response': train_result['arm_response'],
+                'scaled_arm_response': train_result['scaled_arm_response'],
+            }, epoch)
 
         if n_gpus > 1:
             model_ = model.module

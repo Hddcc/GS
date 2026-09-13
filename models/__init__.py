@@ -1,5 +1,6 @@
 from .models import register, make
 from . import edsr
+from . import edsr_face_iafm_idm_arm
 from . import edsr_geometry_appearance
 from . import gaussian
 from . import gaussian_memory_efficient
