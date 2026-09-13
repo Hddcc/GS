@@ -156,6 +156,63 @@ class GaussianSplatter(nn.Module):
         self.opacity = nn.Parameter(self.opacity)  # Transparency of feature, shape=[num_points, 1]
         self.rho = nn.Parameter(self.rho)
 
+        # Evaluation-only oracle hook. It is inert unless an evaluator sets a
+        # covariance adjustment explicitly, so existing checkpoints and runs
+        # retain bitwise-identical behavior.
+        self.oracle_covariance_adjustment = None
+        self.oracle_covariance_mode = 'add'
+        self.oracle_min_eigenvalue = 1e-4
+        self.last_oracle_covariance_diagnostics = None
+
+    def set_oracle_covariance_adjustment(self, adjustment=None, mode='add',
+                                         min_eigenvalue=1e-4):
+        if adjustment is None:
+            self.oracle_covariance_adjustment = None
+            self.last_oracle_covariance_diagnostics = None
+            return
+        if mode not in ('add', 'subtract'):
+            raise ValueError('Oracle covariance mode must be add or subtract.')
+        adjustment = torch.as_tensor(adjustment).detach()
+        if adjustment.shape != (2, 2):
+            raise ValueError('Oracle covariance adjustment must have shape [2, 2].')
+        if not torch.isfinite(adjustment).all():
+            raise ValueError('Oracle covariance adjustment must be finite.')
+        if not torch.allclose(adjustment, adjustment.transpose(0, 1),
+                              rtol=0, atol=1e-7):
+            raise ValueError('Oracle covariance adjustment must be symmetric.')
+        if torch.linalg.eigvalsh(adjustment.float()).min().item() < -1e-7:
+            raise ValueError('Oracle covariance adjustment must be PSD.')
+        if min_eigenvalue <= 0:
+            raise ValueError('Oracle minimum eigenvalue must be positive.')
+        self.oracle_covariance_adjustment = adjustment
+        self.oracle_covariance_mode = mode
+        self.oracle_min_eigenvalue = float(min_eigenvalue)
+        self.last_oracle_covariance_diagnostics = None
+
+    def _apply_oracle_covariance_adjustment(self, covariance):
+        adjustment = self.oracle_covariance_adjustment
+        if adjustment is None:
+            self.last_oracle_covariance_diagnostics = None
+            return covariance
+        adjustment = adjustment.to(device=covariance.device,
+                                   dtype=covariance.dtype)
+        sign = 1.0 if self.oracle_covariance_mode == 'add' else -1.0
+        proposed = covariance + sign * adjustment
+        eigenvalues, eigenvectors = torch.linalg.eigh(proposed)
+        clamped = eigenvalues.clamp_min(self.oracle_min_eigenvalue)
+        adjusted = torch.matmul(
+            eigenvectors * clamped.unsqueeze(-2),
+            eigenvectors.transpose(-1, -2),
+        )
+        self.last_oracle_covariance_diagnostics = {
+            'clamp_fraction': (eigenvalues < self.oracle_min_eigenvalue)
+                .float().mean().detach(),
+            'minimum_eigenvalue': clamped.min().detach(),
+            'maximum_eigenvalue': clamped.max().detach(),
+            'adjustment_mean_abs': adjustment.abs().mean().detach(),
+        }
+        return adjusted
+
     def weighted_gaussian_parameters(self, logits):
         """
         Computes weighted Gaussian parameters based on logits and the Gaussian kernel parameters (sigma_x, sigma_y, opacity).
@@ -252,6 +309,7 @@ class GaussianSplatter(nn.Module):
             [torch.stack([sigma_x ** 2 + 1e-5, rho * sigma_x * sigma_y], dim=-1),
              torch.stack([rho * sigma_x * sigma_y, sigma_y ** 2 + 1e-5], dim=-1)], dim=-2
         )  # when correlation rou is set to zero, covariance will always be positive semi-definite
+        covariance = self._apply_oracle_covariance_adjustment(covariance)
         inv_covariance = torch.inverse(covariance).to(feat_device)
 
         # 5.3. Choosing a broad range for the distribution [-5,5] to avoid any clipping

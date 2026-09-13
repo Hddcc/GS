@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "protocol_seed": 20260913,
+  "kernel_size": 21,
+  "renderer_kernel_size": 5,
+  "renderer_reference_variance": 2.25,
+  "renderer_calibration_epsilon": 0.05,
+  "alphas": [0.25, 0.5, 1.0],
+  "sweep_scales": [2.0, 4.0, 8.0],
+  "confirmation_scales": [1.5, 2.0, 4.0, 8.0],
+  "maximum_clamp_fraction": 0.1,
+  "splits": {
+    "sweep": {"dataset": "celeba_val", "start_index": 100, "count": 18},
+    "celeba": {"dataset": "celeba_val", "start_index": 0, "count": 100},
+    "helen": {"dataset": "helen_test", "start_index": 0, "count": 50}
+  },
+  "degradations": [
+    {"bucket": "mild", "sigma_major": 0.8, "sigma_minor": 0.5, "angle_degrees": 0.0},
+    {"bucket": "mild", "sigma_major": 0.8, "sigma_minor": 0.5, "angle_degrees": 45.0},
+    {"bucket": "mild", "sigma_major": 0.8, "sigma_minor": 0.5, "angle_degrees": 90.0},
+    {"bucket": "medium", "sigma_major": 1.6, "sigma_minor": 0.8, "angle_degrees": 0.0},
+    {"bucket": "medium", "sigma_major": 1.6, "sigma_minor": 0.8, "angle_degrees": 45.0},
+    {"bucket": "medium", "sigma_major": 1.6, "sigma_minor": 0.8, "angle_degrees": 90.0}
+  ]
+}
