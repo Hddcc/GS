@@ -90,7 +90,10 @@ for index in 0 1 2; do
       --output "../../$output/candidate_x${scale}.json" \
       --scale "$scale" \
       --max-samples 100 \
-      > "../../$output/candidate_x${scale}.log" 2>&1
+      2>&1 \
+      | sed -u "s/^/[x${scale}] /" \
+      | tee "../../$output/candidate_x${scale}.log"
+    exit "${PIPESTATUS[0]}"
   ) &
   pids+=("$!")
   echo "LAUNCHED: GSASR x$scale on physical GPU $gpu, pid=${pids[-1]}"
@@ -102,8 +105,6 @@ for index in 0 1 2; do
     echo "ERROR: GSASR x${scales[$index]} candidate evaluation failed" >&2
     tail -n 80 "$output/candidate_x${scales[$index]}.log" >&2 || true
     candidate_status=1
-  else
-    cat "$output/candidate_x${scales[$index]}.log"
   fi
 done
 [[ "$candidate_status" -eq 0 ]] || exit 1

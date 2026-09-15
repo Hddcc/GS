@@ -30,6 +30,13 @@ Monitor
 -------
   tail -f results/face_gsasr_zero_train_admission_orchestrator.log
 
+The orchestrator streams all three scale progresses with x2/x4/x8 prefixes.
+Per-scale copies remain available under:
+
+  results/face_gsasr_zero_train_admission/candidate_x2.log
+  results/face_gsasr_zero_train_admission/candidate_x4.log
+  results/face_gsasr_zero_train_admission/candidate_x8.log
+
 x2, x4, and x8 candidate evaluations use physical GPUs 0, 2, and 4 in that
 order. The GaussianSR baseline manifest is produced first on GPU 4. Both
 systems receive LR tensors produced by the same pinned torchvision/PIL
