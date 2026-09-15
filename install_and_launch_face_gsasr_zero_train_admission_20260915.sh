@@ -112,7 +112,6 @@ targets=(
   run_face_gsasr_zero_train_admission.sh
   README_face_gsasr_zero_train_admission_20260915.txt
   THIRD_PARTY_NOTICES_GSASR.md
-  建议F_完整GSASR迁移与零训练门禁复核_20260915.md
   "$official_dir/LICENSE"
   "$official_dir/setup_gscuda.py"
   "$official_dir/evaluate_face_gsasr_candidate.py"

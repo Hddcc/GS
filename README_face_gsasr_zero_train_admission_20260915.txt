@@ -12,12 +12,12 @@ Single-file transfer and launch
 -------------------------------
 Upload only:
 
-  face_gsasr_zero_train_admission_bundle_v3_20260915.zip
+  face_gsasr_zero_train_admission_bundle_v4_20260915.zip
 
 Then run from the GaussianSR project root in the GS conda environment:
 
-  unzip -q face_gsasr_zero_train_admission_bundle_v3_20260915.zip
-  PHYSICAL_GPUS=0,1 ADMISSION_GPU=1 bash face_gsasr_zero_train_admission_bundle_v3_20260915/install_and_launch_face_gsasr_zero_train_admission_20260915.sh
+  unzip -q face_gsasr_zero_train_admission_bundle_v4_20260915.zip
+  PHYSICAL_GPUS=0,1 ADMISSION_GPU=1 bash face_gsasr_zero_train_admission_bundle_v4_20260915/install_and_launch_face_gsasr_zero_train_admission_20260915.sh
 
 The official encoder and decoder weights are included in the ZIP; the server
 does not need network access. The installer does not create or modify the GS
