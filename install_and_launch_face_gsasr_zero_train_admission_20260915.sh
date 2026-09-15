@@ -4,9 +4,9 @@ set -euo pipefail
 project=/root/userfolder_new/20260527GaussiSR/GaussianSR-main
 bundle_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 payload="$bundle_dir/payload"
-implementation_commit=95c077f7689a5f33ba604cd20552a3cac5e9e5ac
-physical_gpus="${PHYSICAL_GPUS:-0,2,4}"
-admission_gpu="${ADMISSION_GPU:-4}"
+implementation_commit=bdec36133ba92c91d7dcf4d096192808117afc46
+physical_gpus="${PHYSICAL_GPUS:-0,1}"
+admission_gpu="${ADMISSION_GPU:-1}"
 stamp="$project/results/face_gsasr_zero_train_cuda_admission_20260915.txt"
 log="$project/results/face_gsasr_zero_train_admission_orchestrator.log"
 pid_file="$project/results/face_gsasr_zero_train_admission_orchestrator.pid"
@@ -22,8 +22,8 @@ official_dir=third_party/gsasr_paper_9d2eb64
   exit 1
 }
 IFS=',' read -r -a gpu_array <<< "$physical_gpus"
-[[ "${#gpu_array[@]}" -eq 3 ]] || {
-  echo 'STOP: PHYSICAL_GPUS must contain exactly three GPU ids' >&2
+[[ "${#gpu_array[@]}" -eq 2 || "${#gpu_array[@]}" -eq 3 ]] || {
+  echo 'STOP: PHYSICAL_GPUS must contain two or three GPU ids' >&2
   exit 1
 }
 declare -A seen_gpus=()
