@@ -3,7 +3,7 @@ set -uo pipefail
 
 cd /root/userfolder_new/20260527GaussiSR/GaussianSR-main
 
-physical_gpus="${PHYSICAL_GPUS:-0,2,4}"
+physical_gpus="${PHYSICAL_GPUS:-0,1}"
 eval_bsize="${EVAL_BSIZE:-10000}"
 baseline=save/face_gaussian_baseline_seed1_probe_full5/epoch-5.pth
 config=configs/train/face/probe_face_gaussian_baseline_seed1.yaml
@@ -24,8 +24,9 @@ finish_on_error() {
 trap finish_on_error EXIT
 
 IFS=',' read -r -a gpu_array <<< "$physical_gpus"
-[[ "${#gpu_array[@]}" -eq 3 ]] || {
-  echo 'STOP: PHYSICAL_GPUS must contain exactly three GPU ids' >&2
+gpu_count="${#gpu_array[@]}"
+[[ "$gpu_count" -eq 2 || "$gpu_count" -eq 3 ]] || {
+  echo 'STOP: PHYSICAL_GPUS must contain two or three GPU ids' >&2
   exit 1
 }
 declare -A seen_gpus=()
@@ -61,12 +62,13 @@ done
 }
 
 mkdir -p "$output"
-echo "RUNTIME: GSASR x2/x4/x8 on physical GPUs $physical_gpus"
-echo "BASELINE: physical GPU ${gpu_array[2]}, paired 100-image RGB protocol"
+baseline_gpu="${gpu_array[$((gpu_count - 1))]}"
+echo "RUNTIME: GSASR x2/x4/x8 in waves on physical GPUs $physical_gpus"
+echo "BASELINE: physical GPU $baseline_gpu, paired 100-image RGB protocol"
 echo 'MODE: official GSASR paper EDSR weights, evaluation only, no training'
 echo 'START: face_gsasr_zero_train_admission'
 
-CUDA_VISIBLE_DEVICES="${gpu_array[2]}" python -u evaluate_face_gsasr_baseline.py \
+CUDA_VISIBLE_DEVICES="$baseline_gpu" python -u evaluate_face_gsasr_baseline.py \
   --config "$config" \
   --checkpoint "$baseline" \
   --output "$output/baseline.json" \
@@ -76,36 +78,44 @@ CUDA_VISIBLE_DEVICES="${gpu_array[2]}" python -u evaluate_face_gsasr_baseline.py
 baseline_status=${PIPESTATUS[0]}
 [[ "$baseline_status" -eq 0 ]] || exit "$baseline_status"
 
-pids=()
 scales=(2 4 8)
-for index in 0 1 2; do
-  scale="${scales[$index]}"
-  gpu="${gpu_array[$index]}"
-  (
-    cd "$third_party" || exit 1
-    CUDA_VISIBLE_DEVICES="$gpu" python -u evaluate_face_gsasr_candidate.py \
-      --baseline-json "../../$output/baseline.json" \
-      --data-root "../../$data_root" \
-      --weights weights \
-      --output "../../$output/candidate_x${scale}.json" \
-      --scale "$scale" \
-      --max-samples 100 \
-      2>&1 \
-      | sed -u "s/^/[x${scale}] /" \
-      | tee "../../$output/candidate_x${scale}.log"
-    exit "${PIPESTATUS[0]}"
-  ) &
-  pids+=("$!")
-  echo "LAUNCHED: GSASR x$scale on physical GPU $gpu, pid=${pids[-1]}"
-done
-
 candidate_status=0
-for index in 0 1 2; do
-  if ! wait "${pids[$index]}"; then
-    echo "ERROR: GSASR x${scales[$index]} candidate evaluation failed" >&2
-    tail -n 80 "$output/candidate_x${scales[$index]}.log" >&2 || true
-    candidate_status=1
-  fi
+for ((wave_start = 0; wave_start < 3; wave_start += gpu_count)); do
+  wave_pids=()
+  wave_scales=()
+  for ((slot = 0; slot < gpu_count; slot++)); do
+    index=$((wave_start + slot))
+    [[ "$index" -lt 3 ]] || break
+    scale="${scales[$index]}"
+    gpu="${gpu_array[$slot]}"
+    (
+      cd "$third_party" || exit 1
+      CUDA_VISIBLE_DEVICES="$gpu" python -u evaluate_face_gsasr_candidate.py \
+        --baseline-json "../../$output/baseline.json" \
+        --data-root "../../$data_root" \
+        --weights weights \
+        --output "../../$output/candidate_x${scale}.json" \
+        --scale "$scale" \
+        --max-samples 100 \
+        2>&1 \
+        | sed -u "s/^/[x${scale}] /" \
+        | tee "../../$output/candidate_x${scale}.log"
+      exit "${PIPESTATUS[0]}"
+    ) &
+    pid=$!
+    wave_pids+=("$pid")
+    wave_scales+=("$scale")
+    echo "LAUNCHED: GSASR x$scale on physical GPU $gpu, pid=$pid"
+  done
+  for slot in "${!wave_pids[@]}"; do
+    if ! wait "${wave_pids[$slot]}"; then
+      scale="${wave_scales[$slot]}"
+      echo "ERROR: GSASR x$scale candidate evaluation failed" >&2
+      tail -n 80 "$output/candidate_x${scale}.log" >&2 || true
+      candidate_status=1
+    fi
+  done
+  [[ "$candidate_status" -eq 0 ]] || break
 done
 [[ "$candidate_status" -eq 0 ]] || exit 1
 

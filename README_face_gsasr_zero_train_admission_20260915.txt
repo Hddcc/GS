@@ -12,12 +12,12 @@ Single-file transfer and launch
 -------------------------------
 Upload only:
 
-  face_gsasr_zero_train_admission_bundle_20260915.zip
+  face_gsasr_zero_train_admission_bundle_v2_20260915.zip
 
 Then run from the GaussianSR project root in the GS conda environment:
 
-  unzip -q face_gsasr_zero_train_admission_bundle_20260915.zip
-  PHYSICAL_GPUS=0,2,4 ADMISSION_GPU=4 bash face_gsasr_zero_train_admission_bundle_20260915/install_and_launch_face_gsasr_zero_train_admission_20260915.sh
+  unzip -q face_gsasr_zero_train_admission_bundle_v2_20260915.zip
+  PHYSICAL_GPUS=0,1 ADMISSION_GPU=1 bash face_gsasr_zero_train_admission_bundle_v2_20260915/install_and_launch_face_gsasr_zero_train_admission_20260915.sh
 
 The official encoder and decoder weights are included in the ZIP; the server
 does not need network access. The installer does not create or modify the GS
@@ -37,8 +37,9 @@ Per-scale copies remain available under:
   results/face_gsasr_zero_train_admission/candidate_x4.log
   results/face_gsasr_zero_train_admission/candidate_x8.log
 
-x2, x4, and x8 candidate evaluations use physical GPUs 0, 2, and 4 in that
-order. The GaussianSR baseline manifest is produced first on GPU 4. Both
+With two cards, x2 and x4 first run in parallel on physical GPUs 0 and 1;
+x8 then runs on GPU 0. The GaussianSR baseline manifest is produced first on
+GPU 1. Three-card mode remains supported when three ids are supplied. Both
 systems receive LR tensors produced by the same pinned torchvision/PIL
 bicubic path; source-image and LR byte hashes are paired and verified.
 
