@@ -59,7 +59,7 @@ PHYSICAL_GPUS=3,4 ADMISSION_GPU=4 EVALUATION_GPU=4 bash face_scale_gated_frequen
 tail -f face_scale_gated_frequency_bundle_20260918/runtime/results/orchestrator.log
 ```
 
-状态：实现与 CPU 机制验证完成；服务器训练、CUDA 准入与真实提升尚待反馈，未合并 main。
+状态：实现、CPU 与服务器 CUDA 机制验证完成；control/residual 后台任务已启动，训练结果与真实提升尚待反馈，未合并 main。
 
 ## 已交付单包
 
@@ -70,3 +70,12 @@ tail -f face_scale_gated_frequency_bundle_20260918/runtime/results/orchestrator.
 - 解压后的 23 项清单全通过，shell 语法和精简 runtime 独立 CPU 测试通过。
 - baseline 默认路径不存在时程序停止，不自动降级到五轮权重。请用绝对路径设置 `BASELINE_CHECKPOINT` 指向正式 baseline 最优 checkpoint，并保留同目录 `config.yaml`。
 - 如果找不到正式 checkpoint 或来源配置，请回传停止信息；不要重新从头训练或绕过正式来源检查。
+
+## 服务器准入反馈
+
+- 用户回传：包内 23 项 SHA-256 全部 OK；CUDA 上无门控/有门控两组在 x2/x2.5/x3/x3.5/x4/x8 的初始误差均为 0，`SCALE-GATED FREQUENCY MECHANISM TEST PASSED`。
+- `SCALE-GATED FREQUENCY PROTOCOL PREPARED`：checkpoint seed/model、来源配置 epoch_max、归一化和数据目录检查通过；该输出不能独立证明历史正式训练完整结束。
+- 后台 pid `128734`，`control` 使用物理 GPU 3，`residual` 使用物理 GPU 4；日志已有两组 START，尚无用户回传首轮 epoch 指标。
+- `gated` 尚未启动，应等待上述两组都完成，再在 GPU 4 运行；启动器打印 gated 日志路径不代表该文件已经创建。
+- 总日志只输出任务阶段，不实时转发 epoch 进度。当前应查看 `runtime/results/control/train_console.log` 或 `runtime/results/residual/train_console.log`。
+- 本次仅记录 CUDA 准入和任务启动成功，不据此判定三组训练完成或质量提升；不重新安装、启动重复任务或继续新方向。
