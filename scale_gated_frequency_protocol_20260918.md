@@ -60,3 +60,13 @@ tail -f face_scale_gated_frequency_bundle_20260918/runtime/results/orchestrator.
 ```
 
 状态：实现与 CPU 机制验证完成；服务器训练、CUDA 准入与真实提升尚待反馈，未合并 main。
+
+## 已交付单包
+
+- 实现 commit：`00dfce19d8c61941b6b25fddeb098e9cd92c2a20`，已 push。
+- 本地 ZIP：`D:/个人资料/项目/任意尺度/face_scale_gated_frequency_bundle_20260918.zip`。
+- 大小：41,654 bytes，不含数据或训练权重，复用服务器正式 baseline。
+- SHA-256：`ad6dae2d536b077682f0c211afdfc594a908e593f9746b708e8a59026a98f502`。
+- 解压后的 23 项清单全通过，shell 语法和精简 runtime 独立 CPU 测试通过。
+- baseline 默认路径不存在时程序停止，不自动降级到五轮权重。请用绝对路径设置 `BASELINE_CHECKPOINT` 指向正式 baseline 最优 checkpoint，并保留同目录 `config.yaml`。
+- 如果找不到正式 checkpoint 或来源配置，请回传停止信息；不要重新从头训练或绕过正式来源检查。
