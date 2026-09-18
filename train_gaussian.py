@@ -230,8 +230,21 @@ def prepare_training():
                 .format(checkpoint_seed, training_seed)
             )
         model = models.make(sv_file['model'], load_sd=True).cuda()
+        parameters = model.parameters()
+        if config.get('baseline_adaptation') is not None:
+            from scale_gated_frequency_training import optimizer_groups
+            adaptation = config['baseline_adaptation']
+            if sv_file.get('baseline_adaptation') != adaptation:
+                raise ValueError('Resume adaptation protocol differs from the checkpoint.')
+            if (sv_file['model']['name'] != config['model']['name']
+                    or sv_file['model']['args'] != config['model']['args']):
+                raise ValueError('Resume model differs from the requested adaptation arm.')
+            parameters = optimizer_groups(
+                model, adaptation['backbone_lr'], adaptation['residual_lr'],
+            )
+            config['baseline_source'] = sv_file['baseline_source']
         optimizer = utils.make_optimizer(
-            model.parameters(), sv_file['optimizer'], load_sd=True)  #
+            parameters, sv_file['optimizer'], load_sd=True)
         epoch_start = sv_file['epoch'] + 1
         if config.get('multi_step_lr') is None:
             lr_scheduler = None
@@ -247,8 +260,18 @@ def prepare_training():
         max_val_v = sv_file.get('best_val', -1e18)
     else:
         model = models.make(config['model']).cuda()
-        optimizer = utils.make_optimizer(
-            model.parameters(), config['optimizer'])  #
+        adaptation = config.get('baseline_adaptation')
+        if adaptation is not None:
+            from scale_gated_frequency_training import initialize_from_baseline, optimizer_groups
+            config['baseline_source'] = initialize_from_baseline(
+                model, adaptation['checkpoint'], training_seed,
+            )
+            log('baseline source: {}'.format(config['baseline_source']))
+            optimizer = utils.make_optimizer(optimizer_groups(
+                model, adaptation['backbone_lr'], adaptation['residual_lr'],
+            ), config['optimizer'])
+        else:
+            optimizer = utils.make_optimizer(model.parameters(), config['optimizer'])
         epoch_start = 1
         if config.get('multi_step_lr') is None:
             lr_scheduler = None
@@ -472,7 +495,12 @@ def main(config_, save_path, seed, microbatch_size=None):
     config['seed'] = seed
     deterministic = bool(config.get('deterministic', True))
     set_seed(seed, deterministic=deterministic)
-    log, writer = utils.set_save_path(save_path)
+    if config.get('baseline_adaptation') is not None:
+        if os.path.exists(save_path) and config.get('resume') is None:
+            raise FileExistsError('Refusing to overwrite adaptation run: ' + save_path)
+        log, writer = utils.set_save_path(save_path, remove=False)
+    else:
+        log, writer = utils.set_save_path(save_path)
     with open(os.path.join(save_path, 'config.yaml'), 'w') as f:
         yaml.dump(config, f, sort_keys=False)
 
@@ -484,6 +512,8 @@ def main(config_, save_path, seed, microbatch_size=None):
         }
 
     model, optimizer, epoch_start, lr_scheduler, random_state, max_val_v = prepare_training()
+    with open(os.path.join(save_path, 'config.yaml'), 'w') as f:
+        yaml.dump(config, f, sort_keys=False)
     if random_state is None:
         # Extra modules consume different amounts of RNG during construction.
         # Reset here so shared training-time randomness is aligned across A/B.
@@ -529,6 +559,12 @@ def main(config_, save_path, seed, microbatch_size=None):
     for epoch in range(epoch_start, epoch_max + 1):
         t_epoch_start = timer.t()
         log_info = ['epoch {}/{}'.format(epoch, epoch_max)]
+        if config.get('baseline_adaptation') is not None:
+            from scale_gated_frequency_training import set_training_stage
+            stage = set_training_stage(
+                model, epoch, config['baseline_adaptation']['freeze_epochs'],
+            )
+            log_info.append('stage=' + stage)
         writer.add_scalar('lr', optimizer.param_groups[0]['lr'], epoch)
 
         if hasattr(train_loader.batch_sampler, 'set_epoch'):
@@ -640,6 +676,8 @@ def main(config_, save_path, seed, microbatch_size=None):
             'optimizer': optimizer_spec,
             'epoch': epoch,
             'seed': training_seed,
+            'baseline_source': config.get('baseline_source'),
+            'baseline_adaptation': config.get('baseline_adaptation'),
             'best_val': max_val_v,
             'random_state': capture_random_state(),
             'lr_scheduler': (
