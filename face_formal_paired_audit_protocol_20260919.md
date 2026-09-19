@@ -51,3 +51,23 @@ find results/face_formal_v2protocol/metrics -type f -name '*per_image.csv'
 
 - Helen x2.5/x3.5/x4 的 PSNR-Y 分别 `+0.057851/+0.043244/+0.037274 dB`；CelebA x4 为 `+0.009895 dB`。Helen x2 PSNR-Y `-0.027765 dB`，因此结论限定为中倍率和部分非整数倍率改善。
 - 该结果确认正式“方向高频查询残差＋边缘加权 L1”是当前最适合论文的保底方案。它仍是 seed 1 结果，image bootstrap CI 不等同于多 seed 统计显著性。下一阶段应做冻结和可视化，而不是继续门控模块搜索。
+
+## 冻结状态纠正（2026-09-19）
+
+- 用户执行历史文档中的 `sha256sum -c results/face_formal_v2protocol/frozen/formal_manifest.sha256`，服务器返回 `No such file or directory`。
+- 这表示正式冻结 manifest 尚未生成，不能据此宣称 checkpoint、日志、代码和 CSV 已被统一冻结。逐图配对 JSON 的真实性校验不受影响，但论文交付前仍需完成冻结。
+- 先运行下面的只读盘点命令，把实际存在的文件和目录发回；不要执行 `sha256sum ... > formal_manifest.sha256`，也不要覆盖 `results/face_formal_v2protocol`：
+
+```bash
+cd /root/userfolder_new/20260527GaussiSR/GaussianSR-main
+printf '%s\\n' '--- formal result tree ---'
+find results/face_formal_v2protocol -maxdepth 3 -type f -printf '%p\\n' 2>/dev/null | sort
+printf '%s\\n' '--- formal checkpoints/configs/logs ---'
+find save/face_gaussian_baseline_seed1_formal_v2protocol \\
+     save/face_gaussian_frequency_residual_edge_seed1_formal_v2protocol \\
+     -maxdepth 1 -type f -printf '%p\\n' 2>/dev/null | sort
+printf '%s\\n' '--- frozen directory ---'
+ls -la results/face_formal_v2protocol/frozen 2>/dev/null || true
+```
+
+- 盘点后根据实际存在的训练日志、checkpoint 和当时的代码快照，再生成新的、明确标注日期的冻结清单；不把当前工作树文件冒充正式训练时版本。
