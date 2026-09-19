@@ -5,6 +5,7 @@
 *.yml text eol=lf
 *.md text eol=lf
 *.sha256 text eol=lf
+*SHA256 text eol=lf
 *.png binary
 *.jpg binary
 *.jpeg binary
