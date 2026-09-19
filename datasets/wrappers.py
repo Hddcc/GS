@@ -11,6 +11,27 @@ from datasets import register
 from utils import to_pixel_samples
 
 
+def effective_edge_weight_strength(
+        strength, scale, mode='fixed', scale_reference=4.0,
+        scale_power=0.5):
+    """Return the edge emphasis for a continuous training scale."""
+    strength = float(strength)
+    scale = float(scale)
+    scale_reference = float(scale_reference)
+    scale_power = float(scale_power)
+    if strength < 0:
+        raise ValueError('edge_weight must be non-negative.')
+    if scale <= 0 or scale_reference <= 0:
+        raise ValueError('edge-weight scales must be positive.')
+    if mode == 'fixed':
+        return strength
+    if mode != 'scale-conditioned':
+        raise ValueError(
+            "edge_weight_mode must be 'fixed' or 'scale-conditioned'."
+        )
+    return strength * (scale / scale_reference) ** scale_power
+
+
 def make_edge_weight_map(img, strength):
     if img.shape[0] == 3:
         luminance = (
@@ -109,7 +130,9 @@ class SRImplicitDownsampled(Dataset):
 
     def __init__(self, dataset, inp_size=None, scale_min=1, scale_max=None,
                  augment=False, sample_q=None, batch_per_gpu=4,
-                 edge_weight=0.0):
+                 edge_weight=0.0, edge_weight_mode='fixed',
+                 edge_weight_scale_reference=4.0,
+                 edge_weight_scale_power=0.5):
         self.dataset = dataset
         self.inp_size = inp_size
         self.scale_min = scale_min
@@ -123,6 +146,17 @@ class SRImplicitDownsampled(Dataset):
         if edge_weight < 0:
             raise ValueError('edge_weight must be non-negative.')
         self.edge_weight = float(edge_weight)
+        self.edge_weight_mode = str(edge_weight_mode)
+        self.edge_weight_scale_reference = float(edge_weight_scale_reference)
+        self.edge_weight_scale_power = float(edge_weight_scale_power)
+        if self.edge_weight_mode not in ('fixed', 'scale-conditioned'):
+            raise ValueError(
+                "edge_weight_mode must be 'fixed' or 'scale-conditioned'."
+            )
+        if self.edge_weight_scale_reference <= 0:
+            raise ValueError('edge_weight_scale_reference must be positive.')
+        if not math.isfinite(self.edge_weight_scale_power):
+            raise ValueError('edge_weight_scale_power must be finite.')
         self.call_count = -2
 
     def __len__(self):
@@ -179,7 +213,14 @@ class SRImplicitDownsampled(Dataset):
         hr_coord, hr_rgb = to_pixel_samples(crop_hr.contiguous())
         edge_weight = None
         if self.edge_weight > 0:
-            edge_weight = make_edge_weight_map(crop_hr, self.edge_weight)
+            strength = effective_edge_weight_strength(
+                self.edge_weight,
+                s,
+                mode=self.edge_weight_mode,
+                scale_reference=self.edge_weight_scale_reference,
+                scale_power=self.edge_weight_scale_power,
+            )
+            edge_weight = make_edge_weight_map(crop_hr, strength)
 
         if self.sample_q is not None:
             sample_lst = np.random.choice(
