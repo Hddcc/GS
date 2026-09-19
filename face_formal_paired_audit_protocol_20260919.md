@@ -30,3 +30,11 @@ find results/face_formal_v2protocol/metrics -type f -name '*per_image.csv'
 ```
 
 然后用脚本提示的 `--baseline-celeba`、`--candidate-celeba`、`--baseline-helen`、`--candidate-helen` 四个参数指定路径。不要猜文件属于哪个模型；根据冻结运行日志确认来源。
+
+## 交付状态
+
+- 实现提交 `9b05e90d92135089cffefa6b536b2167b5fe5366`，已 push 到 `origin/experiment/face-formal-paired-audit`。
+- 单包 `D:/个人资料/项目/任意尺度/face_formal_paired_audit_bundle_20260919.zip`，4,157 bytes，SHA-256 `345b8c3155ef635322a0ec3b5c653469fe8f03fa0e481574fb9ab4b40acb3091`。
+- 解压后 `IMPLEMENTATION_COMMIT`、Python 脚本和 bash 脚本的清单校验均 OK；bash 语法、Python 编译及五项合成逐图 CSV 测试通过。
+- 包内仅含 ASCII 命名的运行脚本、校验清单和实现提交，不含本 Markdown、原始 CSV、数据集、checkpoint 或任何训练改动。
+- 首次真实数据分析待服务器反馈。若输出提示自动定位歧义，四条明确路径由服务器上正式实验冻结记录核对后指定；不得根据分析差值判断哪个文件应算候选。
