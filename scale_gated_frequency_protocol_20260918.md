@@ -79,3 +79,9 @@ tail -f face_scale_gated_frequency_bundle_20260918/runtime/results/orchestrator.
 - `gated` 尚未启动，应等待上述两组都完成，再在 GPU 4 运行；启动器打印 gated 日志路径不代表该文件已经创建。
 - 总日志只输出任务阶段，不实时转发 epoch 进度。当前应查看 `runtime/results/control/train_console.log` 或 `runtime/results/residual/train_console.log`。
 - 本次仅记录 CUDA 准入和任务启动成功，不据此判定三组训练完成或质量提升；不重新安装、启动重复任务或继续新方向。
+
+## 2026-09-19 两组训练反馈
+
+- 用户回传 control/residual 均跑至固定 epoch 30/30。末轮 x4 验证 PSNR 分别为 `29.6824` 和 `29.6823`，差 `-0.0001 dB`；两者 train loss 均为 `0.0337`。
+- 这是训练过程中的 x4 验证指标，不是固定五倍率逐图配对评测，更不是论文正式结果。后续仍用预设 epoch-last，不从第 23 轮的验证峰值选择 checkpoint。
+- 尚无 gated 日志和最终 evaluation JSON；仅凭两组完成不能确认 gated 已启动或总流程结束。等待总日志的 `DONE: control`、`DONE: residual`、`START: gated`，再查看 gated 训练及评测输出。
