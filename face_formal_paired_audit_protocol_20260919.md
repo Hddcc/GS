@@ -54,8 +54,8 @@ find results/face_formal_v2protocol/metrics -type f -name '*per_image.csv'
 
 ## 冻结状态纠正（2026-09-19）
 
-- 用户执行历史文档中的 `sha256sum -c results/face_formal_v2protocol/frozen/formal_manifest.sha256`，服务器返回 `No such file or directory`。
-- 这表示正式冻结 manifest 尚未生成，不能据此宣称 checkpoint、日志、代码和 CSV 已被统一冻结。逐图配对 JSON 的真实性校验不受影响，但论文交付前仍需完成冻结。
+- 用户执行历史文档中的 `sha256sum -c results/face_formal_v2protocol/frozen/formal_manifest.sha256`，服务器返回 `No such file or directory`。盘点确认实际存在两个历史清单：`formal_baseline_manifest.sha256` 与 `formal_training_manifest.sha256`，以及两组正式 checkpoint、frozen 配置/日志、四份逐图 CSV 和配对复核 JSON；缺失的是文档中写错的汇总文件名，不是全部冻结资料缺失。
+- 在两份实际清单验证完成前，仍不能声称正式 checkpoint、日志、代码和 CSV 已统一冻结。逐图配对 JSON 的真实性校验不受影响。
 - 先运行下面的只读盘点命令，把实际存在的文件和目录发回；不要执行 `sha256sum ... > formal_manifest.sha256`，也不要覆盖 `results/face_formal_v2protocol`：
 
 ```bash
@@ -70,4 +70,12 @@ printf '%s\\n' '--- frozen directory ---'
 ls -la results/face_formal_v2protocol/frozen 2>/dev/null || true
 ```
 
-- 盘点后根据实际存在的训练日志、checkpoint 和当时的代码快照，再生成新的、明确标注日期的冻结清单；不把当前工作树文件冒充正式训练时版本。
+- 盘点后请验证实际存在的清单，而不是创建同名副本：
+
+```bash
+cd /root/userfolder_new/20260527GaussiSR/GaussianSR-main
+sha256sum -c results/face_formal_v2protocol/frozen/formal_baseline_manifest.sha256
+sha256sum -c results/face_formal_v2protocol/frozen/formal_training_manifest.sha256
+```
+
+- 若某项 `FAILED`，先回传失败行和对应清单内容；不把当前工作树文件冒充正式训练时版本，也不删除或覆盖历史清单。
