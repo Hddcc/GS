@@ -25,7 +25,10 @@ pid_file="$project/results/face_scale_conditioned_edge_probe_orchestrator.pid"
   echo 'STOP: PAYLOAD_SHA256 is missing' >&2
   exit 1
 }
-(cd "$bundle_dir" && sha256sum -c PAYLOAD_SHA256)
+normalized_manifest=$(mktemp)
+trap 'rm -f "$normalized_manifest"' EXIT
+tr -d '\r' < "$bundle_dir/PAYLOAD_SHA256" > "$normalized_manifest"
+(cd "$bundle_dir" && sha256sum -c "$normalized_manifest")
 
 targets=(
   datasets/wrappers.py
