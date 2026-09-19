@@ -59,7 +59,7 @@ PHYSICAL_GPUS=3,4 ADMISSION_GPU=4 EVALUATION_GPU=4 bash face_scale_gated_frequen
 tail -f face_scale_gated_frequency_bundle_20260918/runtime/results/orchestrator.log
 ```
 
-状态：实现、CPU 与服务器 CUDA 机制验证完成；control/residual 后台任务已启动，训练结果与真实提升尚待反馈，未合并 main。
+状态：三组训练和 CelebA val100 五倍率探针完成；质量目标未通过，未合并 main。详见下方终态记录。
 
 ## 已交付单包
 
@@ -85,3 +85,20 @@ tail -f face_scale_gated_frequency_bundle_20260918/runtime/results/orchestrator.
 - 用户回传 control/residual 均跑至固定 epoch 30/30。末轮 x4 验证 PSNR 分别为 `29.6824` 和 `29.6823`，差 `-0.0001 dB`；两者 train loss 均为 `0.0337`。
 - 这是训练过程中的 x4 验证指标，不是固定五倍率逐图配对评测，更不是论文正式结果。后续仍用预设 epoch-last，不从第 23 轮的验证峰值选择 checkpoint。
 - 尚无 gated 日志和最终 evaluation JSON；仅凭两组完成不能确认 gated 已启动或总流程结束。等待总日志的 `DONE: control`、`DONE: residual`、`START: gated`，再查看 gated 训练及评测输出。
+
+## 2026-09-19 探针终态
+
+- 用户回传总日志已有 `DONE: control`、`DONE: residual`、`DONE: gated`、`EVALUATION: 100/100 images` 和 `SCALE-GATED FREQUENCY SEED1 PROBE COMPLETED`。上述“两组训练反馈”是历史中间状态，不是当前终态。
+- 固定 epoch-last 的五倍率结果如下，单位 float RGB PSNR dB；不是正式测试集 Y-PSNR。
+
+| 倍率 | original | control | residual | gated | gated-control | gated-residual |
+|---:|---:|---:|---:|---:|---:|---:|
+| 2 | 35.46734 | 35.48512 | 35.48451 | 35.48445 | -0.00067 | -0.00006 |
+| 2.5 | 33.18996 | 33.20755 | 33.20694 | 33.20694 | -0.00061 | +0.00000 |
+| 3 | 30.34996 | 30.36137 | 30.36026 | 30.36056 | -0.00081 | +0.00030 |
+| 3.5 | 29.57435 | 29.58107 | 29.58034 | 29.58060 | -0.00048 | +0.00026 |
+| 4 | 29.57397 | 29.57672 | 29.57705 | 29.57711 | +0.00039 | +0.00006 |
+
+- x2–x4 五倍率平均：gated-control `-0.00044 dB`，图像 bootstrap CI95 `[-0.0006129,-0.0002712]`；gated-residual `+0.00011 dB`，CI95 `[+0.0000488,+0.0001727]`。bootstrap 不能替代多 seed 训练置信度，千分之一 dB 以下效果不应宣称有效提升。
+- 对同预算 control 仅 x4 有极小正差，整体为负；相对原始权重的提高是额外微调共同带来的。结论为 seed-1 探针质量筛选失败，停止此方向，不用验证集挑倍率包装论文结论。
+- 服务器原始输出 `runtime/results/scale_gated_frequency_evaluation.json`、`runtime/results/evaluation.log`、`runtime/results/orchestrator.log`，模型在独立 bundle 的 `runtime/save/`。未修改或删除用户服务器文件。
