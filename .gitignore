@@ -9,3 +9,5 @@
 *.pt
 *.ckpt
 *.log
+__pycache__/
+*.py[cod]
