@@ -120,7 +120,7 @@ class EDSR(nn.Module):
 
         if args.pretrained_path:
             try:
-                pretrained_dict = torch.load(args.pretrained_path, map_location='cpu')
+                pretrained_dict = torch.load(args.pretrained_path)
                 self.load_state_dict(pretrained_dict)
                 print("Pretrained model loaded successfully.")
             except FileNotFoundError:
@@ -181,18 +181,14 @@ class Encoder(nn.Module):
         logits = logits.permute(0, 2, 3, 1).contiguous().view(B * H * W, Class)
         if self.training:
             logits = F.gumbel_softmax(logits, tau=1, hard=False)
-        else:
-            # Evaluation must not sample new Gumbel noise for every forward pass.
-            indices = logits.argmax(dim=-1, keepdim=True)
-            logits = torch.zeros_like(logits).scatter_(1, indices, 1.0)
+        if not self.training:
+            logits = F.gumbel_softmax(logits, tau=1, hard=True)
         logits = logits.view(B, H, W, Class).permute(0, 3, 1, 2).contiguous()
         return x, logits
 
 
 @register('edsr-baseline')
-def make_encoder_baseline(n_resblocks=16, n_feats=64, res_scale=1, scale=2,
-                          no_upsampling=True, rgb_range=1, n_class=100,
-                          use_pretrained=True):
+def make_encoder_baseline(n_resblocks=16, n_feats=64, res_scale=1, scale=2, no_upsampling=True, rgb_range=1, n_class=100):
     url = {
         'r16f64x2': 'models/weights/edsr_baseline_x2-1bc95232.pt',
         'r16f64x3': 'models/weights/edsr_baseline_x3-abf2a44e.pt',
@@ -214,14 +210,12 @@ def make_encoder_baseline(n_resblocks=16, n_feats=64, res_scale=1, scale=2,
     args.no_upsampling = no_upsampling
     args.rgb_range = rgb_range
     args.n_colors = 3
-    args.pretrained_path = url if use_pretrained else None
+    args.pretrained_path = url
     return Encoder(args, n_class)
 
 
 @register('edsr-large')
-def make_encoder_large(n_resblocks=32, n_feats=256, res_scale=0.1, scale=2,
-                       no_upsampling=True, rgb_range=1, n_class=100,
-                       use_pretrained=True):
+def make_encoder_large(n_resblocks=32, n_feats=256, res_scale=0.1, scale=2, no_upsampling=True, rgb_range=1, n_class=100):
     url = {
         'r16f64x2': 'models/weights/edsr_baseline_x2-1bc95232.pt',
         'r16f64x3': 'models/weights/edsr_baseline_x3-abf2a44e.pt',
@@ -243,7 +237,7 @@ def make_encoder_large(n_resblocks=32, n_feats=256, res_scale=0.1, scale=2,
     args.no_upsampling = no_upsampling
     args.rgb_range = rgb_range
     args.n_colors = 3
-    args.pretrained_path = url if use_pretrained else None
+    args.pretrained_path = url
     return Encoder(args, n_class)
 
 
