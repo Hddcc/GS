@@ -1,0 +1,11 @@
+# Paper notes and local documentation stay outside Git.
+*.md
+
+# Local checkpoints and generated experiment outputs.
+/save/
+/results/
+/outputs/
+*.pth
+*.pt
+*.ckpt
+*.log

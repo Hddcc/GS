@@ -192,7 +192,7 @@ class GaussianSplatter(nn.Module):
         """Generate feature and logits by encoder."""
         self.inp = inp
         self.feat, self.logits = self.encoder(inp)
-        self.feat_coord = make_coord(inp.shape[-2:], flatten=False).cuda().permute(2, 0, 1) \
+        self.feat_coord = make_coord(inp.shape[-2:], flatten=False).to(inp.device).permute(2, 0, 1) \
             .unsqueeze(0).expand(inp.shape[0], 2, *inp.shape[-2:])
         return self.feat, self.logits
 

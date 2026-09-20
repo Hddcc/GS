@@ -11,6 +11,25 @@ from datasets import register
 from utils import to_pixel_samples
 
 
+def make_edge_weight_map(img, strength):
+    if img.shape[0] == 3:
+        luminance = (
+            0.299 * img[0]
+            + 0.587 * img[1]
+            + 0.114 * img[2]
+        )
+    else:
+        luminance = img.mean(dim=0)
+    gradient_x = torch.zeros_like(luminance)
+    gradient_y = torch.zeros_like(luminance)
+    gradient_x[:, 1:] = (luminance[:, 1:] - luminance[:, :-1]).abs()
+    gradient_y[1:, :] = (luminance[1:, :] - luminance[:-1, :]).abs()
+    energy = torch.sqrt(gradient_x.square() + gradient_y.square() + 1e-8)
+    normalized = (energy / energy.mean().clamp_min(1e-6)).clamp_max(4.0)
+    weight = 1 + strength * normalized
+    return (weight / weight.mean().clamp_min(1e-6)).reshape(-1, 1)
+
+
 @register('sr-implicit-paired')
 class SRImplicitPaired(Dataset):
 
@@ -89,7 +108,8 @@ def resize_fn(img, size):
 class SRImplicitDownsampled(Dataset):
 
     def __init__(self, dataset, inp_size=None, scale_min=1, scale_max=None,
-                 augment=False, sample_q=None, batch_per_gpu=4):
+                 augment=False, sample_q=None, batch_per_gpu=4,
+                 edge_weight=0.0):
         self.dataset = dataset
         self.inp_size = inp_size
         self.scale_min = scale_min
@@ -100,6 +120,9 @@ class SRImplicitDownsampled(Dataset):
         self.sample_q = sample_q
         self.last_s = random.uniform(self.scale_min, self.scale_max)
         self.batch_per_gpu = batch_per_gpu
+        if edge_weight < 0:
+            raise ValueError('edge_weight must be non-negative.')
+        self.edge_weight = float(edge_weight)
         self.call_count = -2
 
     def __len__(self):
@@ -107,8 +130,14 @@ class SRImplicitDownsampled(Dataset):
 
     def __getitem__(self, idx):
 
+        explicit_scale = None
+        if isinstance(idx, (tuple, list)):
+            idx, explicit_scale = idx
+
         self.call_count += 1
-        if self.call_count % self.batch_per_gpu == 0:
+        if explicit_scale is not None:
+            s = float(explicit_scale)
+        elif self.call_count % self.batch_per_gpu == 0:
             s = random.uniform(self.scale_min, self.scale_max)
             self.last_s = s
         else:
@@ -148,24 +177,32 @@ class SRImplicitDownsampled(Dataset):
             crop_hr = augment(crop_hr)
 
         hr_coord, hr_rgb = to_pixel_samples(crop_hr.contiguous())
+        edge_weight = None
+        if self.edge_weight > 0:
+            edge_weight = make_edge_weight_map(crop_hr, self.edge_weight)
 
         if self.sample_q is not None:
             sample_lst = np.random.choice(
                 len(hr_coord), self.sample_q, replace=False)
             hr_coord = hr_coord[sample_lst]
             hr_rgb = hr_rgb[sample_lst]
+            if edge_weight is not None:
+                edge_weight = edge_weight[sample_lst]
 
         cell = torch.ones_like(hr_coord)
         cell[:, 0] *= 2 / crop_hr.shape[-2]
         cell[:, 1] *= 2 / crop_hr.shape[-1]
 
-        return {
+        sample = {
             'inp': crop_lr,
             'coord': hr_coord,
             'cell': cell,
             'gt': hr_rgb,
             'scale': s,
         }
+        if edge_weight is not None:
+            sample['weight'] = edge_weight
+        return sample
 
 
 @register('sr-implicit-uniform-varied')
