@@ -1,0 +1,85 @@
+seed: 1
+deterministic: true
+num_workers: 8
+
+train_dataset:
+  dataset:
+    name: image-folder
+    args:
+      root_path: /root/userfolder_new/20260527GaussiSR/GaussianSR-main/Dataset/FACE/CelebA/train/HR
+      repeat: 1
+      cache: in_memory
+  wrapper:
+    name: sr-implicit-downsampled
+    args:
+      inp_size: 16
+      scale_min: 1.5
+      scale_max: 8
+      augment: true
+      sample_q: 512
+      batch_per_gpu: 4
+  batch_size: 12
+  scale_grouped_batching: true
+
+val_dataset:
+  dataset:
+    name: image-folder
+    args:
+      root_path: /root/userfolder_new/20260527GaussiSR/GaussianSR-main/Dataset/FACE/CelebA/val/HR
+      cache: in_memory
+  wrapper:
+    name: sr-implicit-downsampled
+    args:
+      inp_size: null
+      scale_min: 4
+      scale_max: 4
+      augment: false
+      sample_q: null
+  batch_size: 1
+
+data_norm:
+  inp: {sub: [0.5], div: [0.5]}
+  gt: {sub: [0.5], div: [0.5]}
+
+model:
+  name: gaussian-splatter-face-scale-moe-v2
+  args:
+    encoder_spec:
+      name: edsr-baseline
+      args:
+        no_upsampling: true
+        use_pretrained: false
+    dec_spec:
+      name: mlp
+      args:
+        out_dim: 3
+        hidden_list: [256, 256, 256, 256]
+    kernel_size: 5
+    expert_feature_dim: 48
+    expert_hidden_dim: 64
+    num_experts: 3
+    scale_min: 1.5
+    scale_max: 8
+    router_temperature: 0.7
+    scale_prior_strength: 2.0
+    router_content_strength: 0.75
+    balance_loss_weight: 0.0
+    entropy_loss_weight: 0.0
+    prior_loss_weight: 0.001
+    experts_receive_scale: false
+    max_rgb_residual: 0.20
+    residual_gate_init: 0.50
+
+optimizer:
+  name: adam
+  args:
+    lr: 1.e-4
+
+epoch_max: 30
+multi_step_lr:
+  milestones: [135, 270, 405, 540, 675, 810, 945, 1080, 1215]
+  gamma: 0.5
+
+epoch_val: 1
+epoch_save: 10
+eval_bsize: 10000

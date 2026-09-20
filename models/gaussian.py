@@ -196,6 +196,33 @@ class GaussianSplatter(nn.Module):
             .unsqueeze(0).expand(inp.shape[0], 2, *inp.shape[-2:])
         return self.feat, self.logits
 
+    def decode_queries(self, coef, freq, coord, cell):
+        """Decode continuous queries with the original nearest feature rule."""
+        feat_coord = self.feat_coord
+        coord_ = coord.clone()
+        q_coef = F.grid_sample(coef, coord_.flip(-1).unsqueeze(1), mode='nearest', align_corners=False)[:, :, 0, :] \
+            .permute(0, 2, 1)
+        q_freq = F.grid_sample(freq, coord_.flip(-1).unsqueeze(1), mode='nearest', align_corners=False)[:, :, 0, :] \
+            .permute(0, 2, 1)
+        q_coord = F.grid_sample(feat_coord, coord_.flip(-1).unsqueeze(1), mode='nearest', align_corners=False)[:, :, 0,
+                  :] \
+            .permute(0, 2, 1)
+        rel_coord = coord - q_coord
+        rel_coord[:, :, 0] *= self.feat.shape[-2]
+        rel_coord[:, :, 1] *= self.feat.shape[-1]
+        rel_cell = cell.clone()
+        rel_cell[:, :, 0] *= self.feat.shape[-2]
+        rel_cell[:, :, 1] *= self.feat.shape[-1]
+        bs, q = coord.shape[:2]
+        q_freq = torch.stack(torch.split(q_freq, 2, dim=-1), dim=-1)
+        q_freq = torch.mul(q_freq, rel_coord.unsqueeze(-1))
+        q_freq = torch.sum(q_freq, dim=-2)
+        q_freq += self.phase(rel_cell.view((bs * q, -1))).view(bs, q, -1)
+        q_freq = torch.cat((torch.cos(np.pi * q_freq), torch.sin(np.pi * q_freq)), dim=-1)
+
+        inp = torch.mul(q_coef, q_freq)
+        return self.dec(inp.contiguous().view(bs * q, -1)).view(bs, q, -1)
+
     def query_rgb(self, coord, scale, cell=None):
         """
         Continuous sampling through 2D Gaussian Splatting.
@@ -319,33 +346,7 @@ class GaussianSplatter(nn.Module):
         # 8. Augmentation (Useful for improving out-of-distribution scale performance)
         coef = self.coef(final_image)
         freq = self.freq(final_image)
-        feat_coord = self.feat_coord
-        coord_ = coord.clone()
-        q_coef = F.grid_sample(coef, coord_.flip(-1).unsqueeze(1), mode='nearest', align_corners=False)[:, :, 0, :] \
-            .permute(0, 2, 1)
-        q_freq = F.grid_sample(freq, coord_.flip(-1).unsqueeze(1), mode='nearest', align_corners=False)[:, :, 0, :] \
-            .permute(0, 2, 1)
-        q_coord = F.grid_sample(feat_coord, coord_.flip(-1).unsqueeze(1), mode='nearest', align_corners=False)[:, :, 0,
-                  :] \
-            .permute(0, 2, 1)
-        rel_coord = coord - q_coord
-        rel_coord[:, :, 0] *= feat.shape[-2]
-        rel_coord[:, :, 1] *= feat.shape[-1]
-        rel_cell = cell.clone()
-        rel_cell[:, :, 0] *= feat.shape[-2]
-        rel_cell[:, :, 1] *= feat.shape[-1]
-        bs, q = coord.shape[:2]
-        q_freq = torch.stack(torch.split(q_freq, 2, dim=-1), dim=-1)
-        q_freq = torch.mul(q_freq, rel_coord.unsqueeze(-1))
-        q_freq = torch.sum(q_freq, dim=-2)
-        q_freq += self.phase(rel_cell.view((bs * q, -1))).view(bs, q, -1)
-        q_freq = torch.cat((torch.cos(np.pi * q_freq), torch.sin(np.pi * q_freq)), dim=-1)
-
-        inp = torch.mul(q_coef, q_freq)
-
-        pred = self.dec(inp.contiguous().view(bs * q, -1)).view(bs, q, -1)
-
-        return pred
+        return self.decode_queries(coef, freq, coord, cell)
 
     def forward(self, inp, coord, scale, cell=None):
         self.gen_feat(inp)
