@@ -13,6 +13,9 @@
 *.onnx
 *.log
 
+# Markdown notes stay local and are not tracked in Git
+*.md
+
 # Packaged server-transfer artifacts
 *.zip
 *.7z
