@@ -55,25 +55,25 @@ OUT_DIR="results/face_formal_ablation/${ABLATION}"
 mkdir -p "$OUT_DIR"
 SCALES=(1.5 2 2.5 3.5 4 5.5 7.5 8)
 
-CUDA_VISIBLE_DEVICES="$PHYSICAL_GPU" python test_face_metrics.py \
+python test_face_metrics.py \
   --dataset-root Dataset/FACE/CelebA/test/HR \
   --dataset-name CelebA \
   --method model \
   --model "$MODEL" \
   --config "$CONFIG_SNAPSHOT" \
   --scales "${SCALES[@]}" \
-  --gpu 0 \
+  --gpu "$PHYSICAL_GPU" \
   --num-workers "$NUM_WORKERS" \
   --output "$OUT_DIR/celeba_metrics.csv"
 
-CUDA_VISIBLE_DEVICES="$PHYSICAL_GPU" python test_face_metrics.py \
+python test_face_metrics.py \
   --dataset-root Dataset/FACE/Helen/test/HR \
   --dataset-name Helen \
   --method model \
   --model "$MODEL" \
   --config "$CONFIG_SNAPSHOT" \
   --scales "${SCALES[@]}" \
-  --gpu 0 \
+  --gpu "$PHYSICAL_GPU" \
   --num-workers "$NUM_WORKERS" \
   --output "$OUT_DIR/helen_metrics.csv"
 
