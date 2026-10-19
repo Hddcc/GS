@@ -26,7 +26,9 @@ GPU in GPU_IDS and creates a separate conda environment; FTD uses the GS env.
 FPLIA downloads PyTorch CUDA 12.1 wheels. Network access and free disk space
 are required. The original B200/PyTorch 2.8 training environment is not
 available on the reported 3090/driver 530 server, so PyTorch 2.4.1 is an
-adaptation. Run setup/smoke before committing to a full training schedule.
+adaptation. The generated VAE config uses SwinIR to match the preceding LIA
+checkpoint and following diffusion stage (the upstream VAE example says RDN).
+Run setup/smoke before committing to a full training schedule.
 
 Logs:
   ftd_liif/results/train_console.log

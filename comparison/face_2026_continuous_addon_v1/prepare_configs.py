@@ -85,6 +85,8 @@ def prepare_fplia(args):
         model = config["model"]["params"]
         if "sample_q" in model:
             model["sample_q"] = 1024
+        if stage == "vae":
+            model["fidconfig"] = {"name": "swinir", "args": {"no_upsampling": True}}
         if stage in ("diffusion", "finetune"):
             model["image_size"] = [16, 16]
         if stage in previous:
