@@ -1,0 +1,62 @@
+train_dataset:
+  dataset:
+    name: image-folder
+    args:
+      root_path: ./load/div2k/DIV2K_train_HR
+      repeat: 20
+      first_k: 75
+      cache: in_memory
+  wrapper:
+    name: sr-implicit-downsampled-lrtfr
+    args:
+      inp_size: 48
+      scale_max: 4
+      augment: true
+      sample_q: 48
+  batch_size: 16
+
+val_dataset:
+  dataset:
+    name: image-folder
+    args:
+      root_path: ./load/div2k/DIV2K_valid_HR
+      first_k: 10
+      repeat: 160
+      cache: in_memory
+  wrapper:
+    name: sr-implicit-downsampled-lrtfr
+    args:
+      inp_size: 48
+      scale_max: 4
+      sample_q: 48
+  batch_size: 16
+
+data_norm:
+  inp: {sub: [0.5], div: [0.5]}
+  gt: {sub: [0.5], div: [0.5]}
+
+model:
+  name: liif-lrtfr
+  args:
+    encoder_spec:
+      name: edsr-baseline
+      args:
+        no_upsampling: true
+    imnet_spec:
+      name: 'siren_lrtfr_cp'
+      args:
+        rank: 100
+        omega_0: 100
+        up_mode: 'nearest'
+
+optimizer:
+  name: adam        
+  args:
+    lr: 1.e-4
+epoch_max: 200
+multi_step_lr:
+  milestones: [40, 80, 120, 160]
+  gamma: 0.5
+
+epoch_val: 1
+epoch_save: 100
