@@ -54,8 +54,8 @@ def prepare_training():
             lr_scheduler = None
         else:
             lr_scheduler = MultiStepLR(optimizer, **config['multi_step_lr'])
-        for _ in range(epoch_start - 1):
-            lr_scheduler.step()
+            lr_scheduler.last_epoch = epoch_start - 1
+            lr_scheduler._last_lr = [group['lr'] for group in optimizer.param_groups]
     else:
         if config.get('pretrain') is not None:
             sv_file = torch.load(config['pretrain'])
@@ -112,7 +112,7 @@ def train(train_loader, model, optimizer):
 def main(config_, save_path):
     global config, log, writer
     config = config_
-    log, writer = utils.set_save_path(save_path)
+    log, writer = utils.set_save_path(save_path, remove=config.get('resume') is None)
     with open(os.path.join(save_path, 'config.yaml'), 'w') as f:
         yaml.dump(config, f, sort_keys=False)
 
