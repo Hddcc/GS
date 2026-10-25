@@ -11,6 +11,7 @@ from PIL import Image
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
 from evaluate_ftd import coord_axis, image_tensor
+from diagnose_ftd_inference import diagnose, evaluation_coords, native_coords
 from native_ftd_check import compare_rows, make_dataset
 
 
@@ -49,6 +50,29 @@ class NativeFTDCheckTest(unittest.TestCase):
             altered = dict(row, psnr_y=28.0)
             with self.assertRaisesRegex(ValueError, "does not match"):
                 compare_rows([altered], path)
+
+    def test_inference_diagnostic_separates_coordinate_paths(self):
+        class CoordinateModel(torch.nn.Module):
+            def forward(self, inp, coord, coordx, coordy, cellx, celly):
+                return coord[..., :1].permute(0, 3, 1, 2).expand(-1, 3, -1, -1)
+
+        axis = coord_axis(16, "cpu")
+        grid_x, grid_y = torch.meshgrid(axis, axis, indexing="ij")
+        sample = {
+            "coord": torch.stack((grid_x, grid_y), dim=-1),
+            "coordx": axis, "coordy": axis,
+            "cellx": torch.full_like(axis, 2 / 16),
+            "celly": torch.full_like(axis, 2 / 16),
+        }
+        native = native_coords(sample, "cpu")
+        evaluated = list(evaluation_coords(16, 16, "cpu"))
+        evaluated[0] = evaluated[0] + 0.01
+        scores = diagnose(CoordinateModel(), torch.zeros(1, 3, 8, 8),
+                          torch.zeros(1, 3, 16, 16), native, evaluated,
+                          2.0, torch.zeros(1, 3, 1, 1), torch.ones(1, 3, 1, 1))
+        self.assertEqual(scores["native_repeat_max_pixel_delta"], 0)
+        self.assertGreater(scores["native_evaluated_max_pixel_delta"], 0)
+        self.assertGreater(scores["coordinate_max_delta"], 0)
 
 
 if __name__ == "__main__":
