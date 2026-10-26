@@ -34,8 +34,11 @@ class NativeFTDCheckTest(unittest.TestCase):
                     gt = image_tensor(image)
                 self.assertTrue(torch.equal(native["inp"], inp))
                 self.assertTrue(torch.equal(native["gt"], gt))
-                self.assertTrue(torch.allclose(native["coordx"], coord_axis(out_h, "cpu")))
-                self.assertTrue(torch.allclose(native["coordy"], coord_axis(out_w, "cpu")))
+                self.assertTrue(torch.equal(native["coordx"], coord_axis(out_h, "cpu")))
+                self.assertTrue(torch.equal(native["coordy"], coord_axis(out_w, "cpu")))
+                cy, cx = torch.meshgrid(coord_axis(out_h, "cpu"),
+                                        coord_axis(out_w, "cpu"), indexing="ij")
+                self.assertTrue(torch.equal(native["coord"], torch.stack((cy, cx), dim=-1)))
 
     def test_per_image_comparison_detects_a_mismatch(self):
         row = {"image": "a.png", "scale": 3.5, "crop_border": 4,

@@ -18,7 +18,9 @@ def image_tensor(image):
 
 
 def coord_axis(size, device):
-    return (torch.arange(size, device=device, dtype=torch.float32) + 0.5) * (2 / size) - 1
+    radius = 1 / size
+    axis = -1 + radius + (2 * radius) * torch.arange(size, dtype=torch.float32)
+    return axis.to(device)
 
 
 def main():
@@ -31,6 +33,10 @@ def main():
     parser.add_argument("--scales", type=float, nargs="+", required=True)
     parser.add_argument("--first-k", type=int)
     args = parser.parse_args()
+    per_image = args.output.with_name(args.output.stem + "_per_image" + args.output.suffix)
+    for path in (args.output, per_image):
+        if path.exists():
+            raise FileExistsError("Refusing to overwrite existing result: " + str(path))
     sys.path.insert(0, str(args.source.resolve()))
     import models
 
