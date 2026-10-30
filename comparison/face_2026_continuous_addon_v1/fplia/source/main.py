@@ -587,6 +587,8 @@ if __name__ == "__main__":
         callbacks_cfg = OmegaConf.create()
 
     callbacks_cfg = OmegaConf.merge(default_callbacks_cfg, callbacks_cfg)
+    # The upstream image callback calls LIAModel.log_images with an unsupported argument.
+    callbacks_cfg.pop("image_logger", None)
     if 'ignore_keys_callback' in callbacks_cfg and hasattr(trainer_opt, 'resume_from_checkpoint'):
         callbacks_cfg.ignore_keys_callback.params['ckpt_path'] = trainer_opt.resume_from_checkpoint
     elif 'ignore_keys_callback' in callbacks_cfg:
