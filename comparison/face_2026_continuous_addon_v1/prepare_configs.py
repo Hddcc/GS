@@ -83,6 +83,8 @@ def prepare_fplia(args):
             if "sample_q" in wrapper:
                 wrapper["sample_q"] = 1024
         model = config["model"]["params"]
+        if stage == "lia-swinir":
+            model.pop("sample_q", None)
         if "sample_q" in model:
             model["sample_q"] = 1024
         if stage == "vae":
