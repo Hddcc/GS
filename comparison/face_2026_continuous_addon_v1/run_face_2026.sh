@@ -43,7 +43,8 @@ setup_fplia() {
   if ! conda env list | awk '{print $1}' | grep -Fxq "$FPLIA_ENV"; then
     conda create -y -n "$FPLIA_ENV" python=3.10
   fi
-  conda run --no-capture-output -n "$FPLIA_ENV" python -m pip install 'pip<24.1'
+  conda run --no-capture-output -n "$FPLIA_ENV" python -m pip install \
+    'pip<24.1' 'setuptools==80.9.0'
   conda run --no-capture-output -n "$FPLIA_ENV" python -m pip install \
     torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
   conda run --no-capture-output -n "$FPLIA_ENV" python -m pip install \
